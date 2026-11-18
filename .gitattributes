@@ -1,1 +1,5 @@
 PC/** -text
+launcher.json -text
+launcher.json.sig -text
+Windows[[:space:]]Launcher/** -text
+Linux[[:space:]]Launcher/** -text
