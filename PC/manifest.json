@@ -1,0 +1,106 @@
+{
+  "version": "1.3.0",
+  "exe": "Project Reboot.exe",
+  "files": [
+    {
+      "path": "D3D12/D3D12Core.dll",
+      "size": 5908408,
+      "sha256": "31f364f2b3aa1753e7ba9ff912d0721c8f424be5fa14503efddafbb30c635d3b"
+    },
+    {
+      "path": "GameAssembly.dll",
+      "size": 43791872,
+      "sha256": "7fcba878b5d0587876aaf229bbe9093921b22174785110b26a4f38065369c954"
+    },
+    {
+      "path": "Project Reboot.exe",
+      "size": 672256,
+      "sha256": "b39684f6bfd0b3536146657a16e84cd1dfbbcb08510e784944e597cad03fb338"
+    },
+    {
+      "path": "Project Reboot_Data/Plugins/x86_64/lib_burst_generated.dll",
+      "size": 63488,
+      "sha256": "9a4e8f0f45eea54f06da2709a5a38c0db9a44831ba9193fa30bb015f340bcfba"
+    },
+    {
+      "path": "Project Reboot_Data/Resources/unity default resources",
+      "size": 5858500,
+      "sha256": "d656c46a47e39c4346e1ae506f6cd8328408ff2d97156274d8ac7adf7b844513"
+    },
+    {
+      "path": "Project Reboot_Data/RuntimeInitializeOnLoads.json",
+      "size": 3944,
+      "sha256": "a430cd2cb2da02202008ca433d5d4aa0c29ef760f0930dc744ea98b28728738a"
+    },
+    {
+      "path": "Project Reboot_Data/ScriptingAssemblies.json",
+      "size": 4872,
+      "sha256": "7f54e13dddd82c942c47572b463889ecbcd63de3e317bf398d98d26dcc0ebf79"
+    },
+    {
+      "path": "Project Reboot_Data/StreamingAssets/UnityServicesProjectConfiguration.json",
+      "size": 1410,
+      "sha256": "239850f78422a9cf858caafeb4d26d4cf977f680acd93d9aefae3dba010f7013"
+    },
+    {
+      "path": "Project Reboot_Data/StreamingAssets/maps/basemap.tmx",
+      "size": 1623,
+      "sha256": "c14d6a81907455c69ce42de2f117ccdbac18ade62daf95602d5f9e71f1602b9c"
+    },
+    {
+      "path": "Project Reboot_Data/app.info",
+      "size": 25,
+      "sha256": "64dc56885d5243f9055895e335d463ff2de1db8b0790055c5ff22ef782908e76"
+    },
+    {
+      "path": "Project Reboot_Data/boot.config",
+      "size": 151,
+      "sha256": "a72475677f9d547f4a6d94a3cd2c0e3cad16c4ba9081596b4ba270229599a78a"
+    },
+    {
+      "path": "Project Reboot_Data/data.unity3d",
+      "size": 70661162,
+      "sha256": "ad79c05ce81bd887078a01728a5d5e4035ee9372dbb4b4eeb02ed4f7f0eea117"
+    },
+    {
+      "path": "Project Reboot_Data/il2cpp_data/Metadata/global-metadata.dat",
+      "size": 9880820,
+      "sha256": "7317d2f6acf7ed0fb25d78965caf34be46f1d689bc47fe290535b82ef499c093"
+    },
+    {
+      "path": "Project Reboot_Data/il2cpp_data/Resources/System.Data.dll-resources.dat",
+      "size": 93718,
+      "sha256": "98a7950ec6de3242c2e190dfa630188dfa32511a125542b94baa952d1c757d49"
+    },
+    {
+      "path": "Project Reboot_Data/il2cpp_data/Resources/System.Drawing.dll-resources.dat",
+      "size": 25453,
+      "sha256": "7c33aa707bc3fdc83991b81a97d6fc622b140762a767300f08f616c2c0a91255"
+    },
+    {
+      "path": "Project Reboot_Data/il2cpp_data/Resources/mscorlib.dll-resources.dat",
+      "size": 337563,
+      "sha256": "c5baa176a5b72cd545266340e42102d393a5e43d38c95796bc828918bb95277f"
+    },
+    {
+      "path": "Project Reboot_Data/resources.resource",
+      "size": 14999200,
+      "sha256": "bb9f288e868285e7ceade89c391d93c5956e864c08c9e184c0a61e9f6a217b6f"
+    },
+    {
+      "path": "Project Reboot_Data/sharedassets0.resource",
+      "size": 57824,
+      "sha256": "bcac1d05c843d59078f3f68c81b8d71b49b6881a3c2aeebff5de247bc2bcbd6c"
+    },
+    {
+      "path": "UnityPlayer.dll",
+      "size": 33622960,
+      "sha256": "d99418dfbfbccb8138030ae808404dd9931551a071aab92324fda5a160f0754c"
+    },
+    {
+      "path": "baselib.dll",
+      "size": 228776,
+      "sha256": "a8d22fbdc730a320ab9feeee5226558f370bb0919e8e4de61f6a0c00d4c67c67"
+    }
+  ]
+}
