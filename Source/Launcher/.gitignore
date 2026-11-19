@@ -1,0 +1,7 @@
+/target
+/keys/
+*.key
+/test/
+release/
+/.tools/
+/assets/fonts/
