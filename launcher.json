@@ -1,13 +1,13 @@
 {
-  "version": "0.2.6",
+  "version": "0.2.7",
   "windows": {
     "file": "Windows Launcher/ProjectRebootLauncher.exe",
-    "size": 11257344,
-    "sha256": "3ad520e40313240b1c98e80f43ee9100b4af2d347a7eb0bd9cbcbb33ee0e3aa5"
+    "size": 11265024,
+    "sha256": "cd74d81a654e5b50f61d0ad05dce361bff0da5cb5dd3955f7b2bafd759014918"
   },
   "linux": {
     "file": "Linux Launcher/ProjectRebootLauncher",
-    "size": 18297152,
-    "sha256": "3d9aa371be8705a3a9f0284167835870db8b5486854587c6d6e7e116f2352b67"
+    "size": 18307648,
+    "sha256": "5e4f7c75b9225a7f9037d2d17d1b1e68bf2989feafc581fe6bbfb15d8c26972e"
   }
 }
