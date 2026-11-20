@@ -28,6 +28,10 @@ data class Profile(val name: String, val rank: Int?, val avatar: ByteArray?) {
 
 data class Remembered(val account: String, val remember: String)
 
+data class GameLogin(val token: String, val next: Remembered)
+
+class SignInExpired(val reason: String?) : Exception()
+
 data class DiscordSession(val session: String, val displayName: String, val accounts: List<String>)
 
 class AuthException(message: String) : Exception(message)
@@ -75,6 +79,23 @@ object Auth {
         if (code in 400..499 && code != 429) throw AuthException("expired")
         if (code !in 200..299) return null
         return Parse.profile(text)
+    }
+
+    fun gameLogin(remember: String): GameLogin? {
+        val (code, text) = Net.postJson(Config.SERVER_URL + "/launcher/resume", JSONObject().put("remember", remember), 16 * 1024)
+        val json = try {
+            JSONObject(text)
+        } catch (e: JSONException) {
+            null
+        }
+        val error = json?.optString("error")
+        if (code in 400..499 && error in setOf("sign_in_expired", "not_in_discord", "no_account")) {
+            throw SignInExpired(json?.optString("message")?.takeIf { error != "sign_in_expired" && it.isNotBlank() && it.length < 300 })
+        }
+        if (code !in 200..299 || json == null) return null
+        val token = json.optString("token").trim()
+        val next = Parse.remembered(json)
+        return if (token.isEmpty() || token.length > 4096 || next == null) null else GameLogin(token, next)
     }
 
     fun forget(remember: String) {

@@ -478,8 +478,25 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 setGame(GameState.Failed(GAME_NOT_INSTALLED, canPlay = false, retry = Retry.Update))
                 return@launch
             }
+            gameLogin()?.let { intent.putExtra(Config.LOGIN_EXTRA, it) }
             _intents.trySend(intent)
             setGame(if (before is GameState.Failed || before == GameState.CheckingServer) GameState.UpToDate else before)
+        }
+    }
+
+    private suspend fun gameLogin(): String? = withContext(Dispatchers.IO) {
+        val saved = vault.load() ?: return@withContext null
+        try {
+            val login = Auth.gameLogin(saved.remember) ?: return@withContext null
+            vault.save(login.next)
+            login.token
+        } catch (e: SignInExpired) {
+            vault.clear()
+            val why = e.reason ?: "Your launcher sign-in expired."
+            _state.update { it.copy(profile = null, notice = "$why The game will ask you to log in. Sign in again on the player card to skip that next time.") }
+            null
+        } catch (e: Exception) {
+            null
         }
     }
 

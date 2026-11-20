@@ -9,6 +9,7 @@ import java.util.Locale
 
 object Config {
     const val GAME_PACKAGE = "com.RebootTeam.ProjectReboot"
+    const val LOGIN_EXTRA = "com.rebootteam.launcher.LOGIN"
     const val RELEASE_URL = "https://api.github.com/repos/Project-Reboot/Release/releases/latest"
     const val SERVER_URL = "https://prod.portalworldsgame.com"
     const val DISCORD_CLIENT_ID = "994736498819731466"

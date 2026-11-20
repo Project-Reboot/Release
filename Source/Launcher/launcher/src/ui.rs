@@ -13,6 +13,7 @@ use crate::api::{self, SignIn, Ticket};
 use crate::config::{self, Config};
 use crate::discord;
 use crate::game::{self, Ended};
+use crate::gameicon;
 use crate::log;
 use crate::prefs;
 use crate::remember;
@@ -191,7 +192,7 @@ impl Art {
         let _ = SKINS.set(Skins { buttons: [id(0), id(1), id(2), id(3)], tables: [id(4), id(5), id(6), id(7)] });
         Art {
             logo: t("logo", include_bytes!("../../assets/ui/game-logo.png")),
-            icon: t("icon", include_bytes!("../../assets/app-icon.png")),
+            icon: t("icon", include_bytes!("../../assets/ui/game-icon.png")),
             avatar: t("avatar", include_bytes!("../../assets/ui/avatar.png")),
             discord: t("discord", include_bytes!("../../assets/ui/icon-discord.png")),
             youtube_icon: t("youtube-icon", include_bytes!("../../assets/ui/icon-youtube.png")),
@@ -229,6 +230,7 @@ pub struct LauncherApp {
     poster: Option<TextureHandle>,
     log_text: String,
     client_log: bool,
+    game_icon: Option<(std::path::PathBuf, Option<std::time::SystemTime>, TextureHandle)>,
     log_checked: f64,
     log_seen: Option<(std::path::PathBuf, u64, Option<std::time::SystemTime>)>,
     sign_in_link: Option<String>,
@@ -382,6 +384,7 @@ impl LauncherApp {
             poster: None,
             log_text: String::new(),
             client_log: false,
+            game_icon: None,
             log_checked: 0.0,
             log_seen: None,
             sign_in_link: None,
@@ -1288,10 +1291,7 @@ fn label_text(painter: &egui::Painter, center: Pos2, value: &str, room: Vec2, di
     let font = blocky(size);
     let drop = (size * 0.07).max(2.0);
     painter.text(center + Vec2::new(drop, drop), Align2::CENTER_CENTER, value, font.clone(), Color32::from_black_alpha(235));
-    let (top, bottom) = if dim { (Color32::from_gray(205), Color32::from_gray(160)) } else { (Color32::WHITE, Color32::from_rgb(200, 202, 216)) };
-    let shape = painter.text(center, Align2::CENTER_CENTER, value, font.clone(), top);
-    let lower = Rect::from_min_max(Pos2::new(shape.left() - 2.0, shape.top() + shape.height() * 0.62), Pos2::new(shape.right() + 2.0, shape.bottom() + 2.0));
-    painter.with_clip_rect(lower.intersect(painter.clip_rect())).text(center, Align2::CENTER_CENTER, value, font, bottom);
+    painter.text(center, Align2::CENTER_CENTER, value, font, if dim { Color32::from_gray(190) } else { Color32::WHITE });
 }
 
 fn button(ui: &mut egui::Ui, rect: Rect, key: &str, label: &str, skin: Skin, enabled: bool) -> bool {
@@ -1509,7 +1509,8 @@ impl LauncherApp {
 
         let game = Rect::from_min_max(Pos2::new(rect.left() + 12.0, rect.top() + 100.0), Pos2::new(rect.right() - 12.0, rect.top() + 164.0));
         let (clicked, item) = self.side_item(ui, game, "side-game", "Project Reboot", matches!(self.page, Page::Play | Page::Notes | Page::Videos));
-        image(&item, &self.art.icon, Rect::from_center_size(Pos2::new(game.left() + 32.0, game.center().y), Vec2::splat(48.0)));
+        let game_icon = self.game_icon();
+        image(&item, &game_icon, Rect::from_center_size(Pos2::new(game.left() + 32.0, game.center().y), Vec2::splat(48.0)));
         let title_y = if self.wine.is_some() { game.center().y - 8.0 } else { game.center().y };
         outlined(&item, Pos2::new(game.left() + 64.0, title_y), Align2::LEFT_CENTER, "Project Reboot", heavy(17.0), Color32::WHITE, 1.5);
         if self.wine.is_some() {
@@ -1547,7 +1548,7 @@ impl LauncherApp {
         self.window_controls(ui, rect);
         outlined(&painter, Pos2::new(rect.center().x, rect.top() + 26.0), Align2::CENTER_CENTER, "Project Reboot", heavy(21.0), TITLE_GREY, 1.5);
         let version = self.version_text();
-        let version = if version.starts_with(|c: char| c.is_ascii_digit()) { format!("v {version}") } else { version };
+        let version = if version.starts_with(|c: char| c.is_ascii_digit()) { format!("v{version}") } else { version };
         outlined(&painter, Pos2::new(rect.center().x, rect.top() + 49.0), Align2::CENTER_CENTER, &version, heavy(15.0), TITLE_GREY, 1.2);
         let font = heavy(20.0);
         let width = |label: &str| painter.layout_no_wrap(label.to_string(), font.clone(), TEXT).size().x;
@@ -1655,9 +1656,6 @@ impl LauncherApp {
         painter.rect_filled(face.translate(Vec2::new(0.0, 6.0)).shrink(4.0), CornerRadius::same(4), Color32::from_black_alpha(140));
         let busy = matches!(self.phase, Phase::Updating { .. } | Phase::SigningIn { .. } | Phase::Playing { .. });
         nine(&painter, skin.texture(), face, if enabled || busy || matches!(self.phase, Phase::Failed { .. }) { Color32::WHITE } else { Color32::from_gray(150) });
-        if hover > 0.0 {
-            painter.rect_filled(face.shrink(12.0), CornerRadius::ZERO, Color32::from_white_alpha((26.0 * hover) as u8));
-        }
         label_text(&painter, face.center() + Vec2::new(0.0, -2.0), &label, Vec2::new(face.width() - 30.0, face.height() * 0.66), !(enabled || busy));
         if enabled && response.clicked() {
             log::info("Play pressed: making sure the game is up to date first");
@@ -1914,6 +1912,30 @@ impl LauncherApp {
         frame.bottom() + PAD - origin.y
     }
 
+    fn game_icon(&mut self) -> TextureHandle {
+        let Some(exe) = self.installed.as_ref().map(|installed| installed.exe.clone()) else {
+            return self.art.icon.clone();
+        };
+        let stamp = std::fs::metadata(&exe).and_then(|m| m.modified()).ok();
+        if let Some((cached, at, texture)) = &self.game_icon {
+            if *cached == exe && *at == stamp {
+                return texture.clone();
+            }
+        }
+        let texture = match gameicon::load(&exe) {
+            Some(picture) => {
+                let picture = image::imageops::resize(&picture, 96, 96, image::imageops::FilterType::Lanczos3);
+                self.ctx.load_texture("game-icon", egui::ColorImage::from_rgba_unmultiplied([96, 96], picture.as_raw()), TextureOptions::LINEAR)
+            }
+            None => {
+                log::info("The game has no icon the launcher can read, so it shows the built-in one");
+                self.art.icon.clone()
+            }
+        };
+        self.game_icon = Some((exe, stamp, texture.clone()));
+        texture
+    }
+
     fn read_log(&self, max_bytes: u64) -> String {
         if self.client_log {
             config::client_log(&self.cfg.install_dir).map(|(path, _)| log::tail_file(&path, max_bytes)).unwrap_or_default()
@@ -2168,7 +2190,8 @@ impl LauncherApp {
         let panel = Rect::from_center_size(screen.center() + Vec2::new(0.0, (1.0 - shown) * 14.0), Vec2::new(width, height));
         card(&painter, panel, 0.0);
         let icon = Rect::from_min_size(panel.min + Vec2::new(PAD, PAD - 2.0), Vec2::splat(34.0));
-        image(&painter, &self.art.icon, icon);
+        let game_icon = self.game_icon();
+        image(&painter, &game_icon, icon);
         text(&painter, Pos2::new(icon.right() + 12.0, icon.center().y), Align2::LEFT_CENTER, "Welcome to Project Reboot!", semi(22.0), TEXT);
         painter.galley(Pos2::new(panel.left() + PAD, panel.top() + PAD + 46.0), intro, MUTED);
         let mut y = panel.top() + PAD + 46.0 + intro_height + GAP;

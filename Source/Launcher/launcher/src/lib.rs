@@ -5,6 +5,7 @@ pub mod cover;
 pub mod desktop;
 pub mod discord;
 pub mod game;
+pub mod gameicon;
 pub mod log;
 pub mod prefs;
 pub mod remember;

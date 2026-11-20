@@ -25,7 +25,7 @@ url = "2"
 base64 = "0.22"
 open = "5"
 eframe = "0.31"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "ico"] }
 rfd = "0.18"
 zstd = "0.14.4"
 openh264 = "0.6"
