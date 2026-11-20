@@ -115,6 +115,33 @@ mod platform {
         path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
     }
 
+    #[cfg(target_os = "macos")]
+    pub fn running_from(dir: &Path) -> Vec<u32> {
+        use std::os::unix::ffi::OsStrExt;
+        let folders = [dir.to_path_buf(), folder(dir)];
+        let me = std::process::id() as i32;
+        let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+        if count <= 0 {
+            return Vec::new();
+        }
+        let mut pids = vec![0i32; count as usize + 64];
+        let filled = unsafe { libc::proc_listallpids(pids.as_mut_ptr() as *mut libc::c_void, (pids.len() * std::mem::size_of::<i32>()) as libc::c_int) };
+        pids.truncate(filled.max(0) as usize);
+        let mut found = Vec::new();
+        let mut buffer = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+        for pid in pids.into_iter().filter(|pid| *pid > 0 && *pid != me) {
+            let length = unsafe { libc::proc_pidpath(pid, buffer.as_mut_ptr() as *mut libc::c_void, buffer.len() as u32) };
+            if length > 0 {
+                let exe = Path::new(std::ffi::OsStr::from_bytes(&buffer[..length as usize]));
+                if folders.iter().any(|folder| exe.starts_with(folder)) {
+                    found.push(pid as u32);
+                }
+            }
+        }
+        found
+    }
+
+    #[cfg(not(target_os = "macos"))]
     pub fn running_from(dir: &Path) -> Vec<u32> {
         let folders = [dir.to_path_buf(), folder(dir)];
         let me = std::process::id();

@@ -598,20 +598,21 @@ mod tests {
 
     #[test]
     fn a_signed_launcher_list_is_read_and_only_a_newer_one_updates() {
-        use pr_manifest::{LauncherBuild, LauncherList, LINUX_LAUNCHER_PATH, WINDOWS_LAUNCHER_PATH};
+        use pr_manifest::{LauncherBuild, LauncherList, LINUX_LAUNCHER_PATH, MAC_LAUNCHER_PATH, WINDOWS_LAUNCHER_PATH};
         let key = pr_manifest::SigningKey::from_bytes(&[5u8; 32]);
         let public = pr_manifest::parse_public_key(&pr_manifest::public_key_hex(&key)).unwrap();
         let list = LauncherList {
             version: "999.0.0".into(),
             windows: Some(LauncherBuild { file: WINDOWS_LAUNCHER_PATH.into(), size: 3, sha256: pr_manifest::sha256_hex(b"win") }),
             linux: Some(LauncherBuild { file: LINUX_LAUNCHER_PATH.into(), size: 3, sha256: pr_manifest::sha256_hex(b"lin") }),
+            mac: Some(LauncherBuild { file: MAC_LAUNCHER_PATH.into(), size: 3, sha256: pr_manifest::sha256_hex(b"mac") }),
         };
         let bytes = serde_json::to_vec(&list).unwrap();
         let signature = pr_manifest::sign_launcher_list(&bytes, &key);
         let server = serve(vec![("launcher.json", bytes), ("launcher.json.sig", signature.into_bytes())]);
         let release = crate::selfupdate::fetch_list_from(&agent(), &server.base, &public).unwrap();
         assert_eq!(release.list, list);
-        let expected = if cfg!(windows) { WINDOWS_LAUNCHER_PATH } else { LINUX_LAUNCHER_PATH };
+        let expected = if cfg!(windows) { WINDOWS_LAUNCHER_PATH } else if cfg!(target_os = "macos") { MAC_LAUNCHER_PATH } else { LINUX_LAUNCHER_PATH };
         assert_eq!(crate::selfupdate::newer(&release.list).map(|b| b.file.as_str()), Some(expected));
         let same = LauncherList { version: crate::selfupdate::CURRENT_VERSION.into(), ..list.clone() };
         assert!(crate::selfupdate::newer(&same).is_none());

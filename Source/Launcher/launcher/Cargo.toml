@@ -37,5 +37,8 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Securit
 [target.'cfg(not(windows))'.dependencies]
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation-sys = "0.8"
+
 [build-dependencies]
 winresource = "0.1"

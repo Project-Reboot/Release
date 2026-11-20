@@ -7,6 +7,7 @@ pub fn load(exe: &Path) -> Option<image::RgbaImage> {
     (picture.width() >= 16 && picture.height() >= 16 && picture.width() <= 1024 && picture.height() <= 1024).then_some(picture)
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn decode_icon_entry(entry: &[u8], width: u8, height: u8, colors: u8, planes: u16, bits: u16) -> Option<image::RgbaImage> {
     if entry.len() > MAX_ICON_BYTES {
         return None;

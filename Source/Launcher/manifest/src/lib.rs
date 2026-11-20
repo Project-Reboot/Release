@@ -13,6 +13,7 @@ pub const LAUNCHER_LIST_FILE: &str = "launcher.json";
 pub const LAUNCHER_LIST_SIGNATURE: &str = "launcher.json.sig";
 pub const WINDOWS_LAUNCHER_PATH: &str = "Windows Launcher/ProjectRebootLauncher.exe";
 pub const LINUX_LAUNCHER_PATH: &str = "Linux Launcher/ProjectRebootLauncher";
+pub const MAC_LAUNCHER_PATH: &str = "Mac Launcher/ProjectRebootLauncher";
 pub const MAX_LAUNCHER_BYTES: u64 = 64 * 1024 * 1024;
 const LAUNCHER_LIST_CONTEXT: &[u8] = b"Project Reboot launcher list\n";
 pub const MAX_NOTES_BYTES: usize = 32 * 1024;
@@ -44,6 +45,8 @@ pub struct LauncherList {
     pub windows: Option<LauncherBuild>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linux: Option<LauncherBuild>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac: Option<LauncherBuild>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -58,10 +61,10 @@ impl LauncherList {
         if parse_version(&self.version).is_none() {
             return Err("the launcher list has no valid version".into());
         }
-        if self.windows.is_none() && self.linux.is_none() {
+        if self.windows.is_none() && self.linux.is_none() && self.mac.is_none() {
             return Err("the launcher list has no launcher in it".into());
         }
-        for (build, expected) in [(&self.windows, WINDOWS_LAUNCHER_PATH), (&self.linux, LINUX_LAUNCHER_PATH)] {
+        for (build, expected) in [(&self.windows, WINDOWS_LAUNCHER_PATH), (&self.linux, LINUX_LAUNCHER_PATH), (&self.mac, MAC_LAUNCHER_PATH)] {
             if let Some(build) = build {
                 if build.file != expected || !is_sha256_hex(&build.sha256) || build.size == 0 || build.size > MAX_LAUNCHER_BYTES {
                     return Err(format!("the launcher list has a bad entry for {expected}"));
@@ -74,6 +77,8 @@ impl LauncherList {
     pub fn for_this_system(&self) -> Option<&LauncherBuild> {
         if cfg!(windows) {
             self.windows.as_ref()
+        } else if cfg!(target_os = "macos") {
+            self.mac.as_ref()
         } else {
             self.linux.as_ref()
         }
@@ -286,6 +291,7 @@ mod tests {
             version: "0.2.0".into(),
             windows: Some(LauncherBuild { file: WINDOWS_LAUNCHER_PATH.into(), size: 10, sha256: sha256_hex(b"windows") }),
             linux: Some(LauncherBuild { file: LINUX_LAUNCHER_PATH.into(), size: 12, sha256: sha256_hex(b"linux") }),
+            mac: Some(LauncherBuild { file: MAC_LAUNCHER_PATH.into(), size: 14, sha256: sha256_hex(b"mac") }),
         }
     }
 
@@ -381,7 +387,10 @@ mod tests {
         let mut bad = list();
         bad.linux.as_mut().unwrap().size = MAX_LAUNCHER_BYTES + 1;
         assert!(bad.validate().is_err());
-        let empty = LauncherList { version: "0.2.0".into(), windows: None, linux: None };
+        let mut bad = list();
+        bad.mac.as_mut().unwrap().file = LINUX_LAUNCHER_PATH.into();
+        assert!(bad.validate().is_err());
+        let empty = LauncherList { version: "0.2.0".into(), windows: None, linux: None, mac: None };
         assert!(empty.validate().is_err());
         let mut no_version = list();
         no_version.version = "soon".into();
@@ -391,7 +400,16 @@ mod tests {
     #[test]
     fn each_system_gets_its_own_launcher() {
         let picked = list().for_this_system().cloned().unwrap();
-        assert_eq!(picked.file, if cfg!(windows) { WINDOWS_LAUNCHER_PATH } else { LINUX_LAUNCHER_PATH });
+        assert_eq!(picked.file, if cfg!(windows) { WINDOWS_LAUNCHER_PATH } else if cfg!(target_os = "macos") { MAC_LAUNCHER_PATH } else { LINUX_LAUNCHER_PATH });
+    }
+
+    #[test]
+    fn an_older_launcher_list_without_mac_still_reads() {
+        let old = br#"{"version":"0.2.11","windows":{"file":"Windows Launcher/ProjectRebootLauncher.exe","size":1,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}"#;
+        let parsed: LauncherList = serde_json::from_slice(old).unwrap();
+        assert!(parsed.mac.is_none());
+        let with_mac = serde_json::to_string(&list()).unwrap();
+        assert!(with_mac.contains("Mac Launcher/ProjectRebootLauncher"));
     }
 
     #[test]

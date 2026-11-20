@@ -1,7 +1,7 @@
 pub mod api;
 pub mod config;
 pub mod cover;
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 pub mod desktop;
 pub mod discord;
 pub mod game;

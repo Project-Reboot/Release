@@ -147,7 +147,81 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod platform {
+    use super::*;
+    use core_foundation_sys::base::{kCFAllocatorDefault, CFGetTypeID, CFRelease, CFTypeRef};
+    use core_foundation_sys::number::{kCFNumberSInt32Type, CFNumberCreate};
+    use core_foundation_sys::preferences::{CFPreferencesAppSynchronize, CFPreferencesCopyAppValue, CFPreferencesSetAppValue};
+    use core_foundation_sys::string::{kCFStringEncodingUTF8, CFStringCreateWithBytes, CFStringGetCString, CFStringGetLength, CFStringGetTypeID, CFStringRef};
+
+    struct Owned(CFTypeRef);
+
+    impl Drop for Owned {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                unsafe { CFRelease(self.0) };
+            }
+        }
+    }
+
+    fn text(value: &str) -> Owned {
+        Owned(unsafe { CFStringCreateWithBytes(kCFAllocatorDefault, value.as_ptr(), value.len() as isize, kCFStringEncodingUTF8, 0) } as CFTypeRef)
+    }
+
+    fn number(value: i32) -> Owned {
+        Owned(unsafe { CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &value as *const i32 as *const std::ffi::c_void) } as CFTypeRef)
+    }
+
+    fn save(domain: &str, token: &str, logged_out: i32) -> Result<(), String> {
+        let app = text(domain);
+        let (token_key, token_value) = (text(TOKEN_PREF), text(token));
+        let (flag_key, flag_value) = (text(LOGGED_OUT_PREF), number(logged_out));
+        if [&app, &token_key, &token_value, &flag_key, &flag_value].iter().any(|v| v.0.is_null()) {
+            return Err("macOS could not prepare the setting".into());
+        }
+        unsafe {
+            CFPreferencesSetAppValue(token_key.0 as CFStringRef, token_value.0, app.0 as CFStringRef);
+            CFPreferencesSetAppValue(flag_key.0 as CFStringRef, flag_value.0, app.0 as CFStringRef);
+            if CFPreferencesAppSynchronize(app.0 as CFStringRef) == 0 {
+                return Err("macOS did not save the setting".into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn write_login(location: &str, token: &str) -> Result<(), String> {
+        save(location, token, 0).map_err(|e| format!("could not save the login for the game: {e}"))
+    }
+
+    pub fn clear_login(location: &str) -> Result<(), String> {
+        save(location, "", 1).map_err(|e| format!("could not clear the game login: {e}"))
+    }
+
+    pub fn read_token(location: &str) -> Option<String> {
+        let (app, key) = (text(location), text(TOKEN_PREF));
+        if app.0.is_null() || key.0.is_null() {
+            return None;
+        }
+        let value = Owned(unsafe { CFPreferencesCopyAppValue(key.0 as CFStringRef, app.0 as CFStringRef) });
+        if value.0.is_null() || unsafe { CFGetTypeID(value.0) } != unsafe { CFStringGetTypeID() } {
+            return None;
+        }
+        let length = unsafe { CFStringGetLength(value.0 as CFStringRef) } as usize;
+        if length > 8192 {
+            return None;
+        }
+        let mut buffer = vec![0u8; length * 4 + 1];
+        let ok = unsafe { CFStringGetCString(value.0 as CFStringRef, buffer.as_mut_ptr() as *mut std::ffi::c_char, buffer.len() as isize, kCFStringEncodingUTF8) };
+        if ok == 0 {
+            return None;
+        }
+        let end = buffer.iter().position(|b| *b == 0).unwrap_or(buffer.len());
+        String::from_utf8(buffer[..end].to_vec()).ok().filter(|t| !t.is_empty())
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
     use super::*;
     use std::fs;

@@ -111,6 +111,7 @@ fn rank_label(rank: Option<u8>) -> Option<&'static str> {
 
 enum Msg {
     Server(api::ServerState),
+    ServerChecked(Option<api::ServerState>),
     PlayDecision(api::ServerState),
     SetupUnavailable(String),
     Playlists(api::Playlists),
@@ -246,6 +247,8 @@ pub struct LauncherApp {
     videos_checked: Option<f64>,
     server: api::ServerState,
     server_checked: f64,
+    server_checking: bool,
+    was_focused: bool,
     setup: bool,
     play_after_update: bool,
     setup_size: Option<u64>,
@@ -276,6 +279,12 @@ fn font_candidates() -> [Vec<std::path::PathBuf>; 4] {
     if cfg!(windows) {
         let dir = std::env::var_os("WINDIR").map(std::path::PathBuf::from).unwrap_or_else(|| "C:\\Windows".into()).join("Fonts");
         [vec![dir.join("segoeui.ttf")], vec![dir.join("segoeuib.ttf")], vec![dir.join("seguisb.ttf"), dir.join("segoeuib.ttf")], vec![dir.join("seguibl.ttf"), dir.join("segoeuib.ttf")]]
+    } else if cfg!(target_os = "macos") {
+        let roots = ["/System/Library/Fonts/Supplemental", "/Library/Fonts", "/System/Library/Fonts"];
+        let pick = |names: &[&str]| -> Vec<std::path::PathBuf> {
+            roots.iter().flat_map(|root| names.iter().map(move |name| std::path::Path::new(root).join(name))).collect()
+        };
+        [pick(&["Arial.ttf"]), pick(&["Arial Bold.ttf"]), pick(&["Arial Bold.ttf"]), pick(&["Arial Black.ttf", "Arial Bold.ttf"])]
     } else {
         let roots = ["/usr/share/fonts/truetype", "/usr/share/fonts", "/usr/local/share/fonts"];
         let pick = |names: &[&str]| -> Vec<std::path::PathBuf> {
@@ -400,6 +409,8 @@ impl LauncherApp {
             videos_checked: None,
             server: api::ServerState::Checking,
             server_checked: 0.0,
+            server_checking: false,
+            was_focused: true,
             setup: config::needs_setup(),
             play_after_update: false,
             setup_size: None,
@@ -432,7 +443,7 @@ impl LauncherApp {
         if let Some(version) = &app.wine {
             log::info(format!("Running under Wine {version} (Linux, Proton or Steam Deck)"));
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
         if let Err(e) = crate::desktop::install() {
             log::warn(format!("Could not add the launcher to the app menu: {e}"));
         }
@@ -706,11 +717,11 @@ impl LauncherApp {
 
     fn check_server(&mut self, may_probe_game_port: bool) {
         self.server_checked = self.ctx.input(|i| i.time);
+        self.server_checking = true;
         let cfg = self.cfg.clone();
         self.spawn(move |tx| {
-            if let Some(state) = api::server_state(&cfg, may_probe_game_port) {
-                let _ = tx.send(Msg::Server(state));
-            }
+            let state = api::server_state(&cfg, may_probe_game_port);
+            let _ = tx.send(Msg::ServerChecked(state));
         });
     }
 
@@ -921,7 +932,7 @@ impl LauncherApp {
         self.installed
             .as_ref()
             .and_then(|i| i.exe.file_name().map(|n| n.to_string_lossy().to_string()))
-            .unwrap_or_else(|| if cfg!(windows) { "Project Reboot.exe".into() } else { "Project Reboot.x86_64".into() })
+            .unwrap_or_else(|| if cfg!(windows) { "Project Reboot.exe".into() } else if cfg!(target_os = "macos") { "Project Reboot.app/Contents/MacOS/Project Reboot".into() } else { "Project Reboot.x86_64".into() })
     }
 
     fn pick_folder(&self, title: &str) -> Option<std::path::PathBuf> {
@@ -993,6 +1004,12 @@ impl LauncherApp {
             self.sign_in_link = None;
         }
         match msg {
+            Msg::ServerChecked(state) => {
+                self.server_checking = false;
+                if let Some(state) = state {
+                    self.handle(Msg::Server(state));
+                }
+            }
             Msg::Server(state) => {
                 if state != self.server {
                     log::info(format!("Server status: {}", server_label(&state)));
@@ -1098,7 +1115,9 @@ impl LauncherApp {
                 }
                 None => {
                     self.play_after_update = false;
-                    let message = if update::is_not_published(&e) && !cfg!(windows) {
+                    let message = if update::is_not_published(&e) && cfg!(target_os = "macos") {
+                        "The Mac version of Project Reboot isn't out yet. The launcher will install it as soon as it is.".to_string()
+                    } else if update::is_not_published(&e) && !cfg!(windows) {
                         format!("The Linux version of Project Reboot isn't out yet. {}", config::PROTON_HELP)
                     } else {
                         format!("Could not download Project Reboot: {e}")
@@ -1408,7 +1427,8 @@ fn note_line(ui: &mut egui::Ui, line: &str) {
     }
 }
 
-const SERVER_RECHECK_SECONDS: f64 = 120.0;
+const SERVER_RECHECK_SECONDS: f64 = 30.0;
+const SERVER_FOCUS_RECHECK_SECONDS: f64 = 5.0;
 const AVATAR_RECHECK_SECONDS: f64 = 300.0;
 
 fn server_label(state: &api::ServerState) -> String {
@@ -2177,6 +2197,7 @@ impl LauncherApp {
         let unpublished = self.setup_size.is_none() && self.setup_unavailable.as_deref().map(update::is_not_published).unwrap_or(false);
         let (footer, footer_color) = match (self.setup_size, &self.setup_unavailable) {
             (Some(size), _) => (format!("Download size: about {:.0} MB", size as f64 / 1_048_576.0), FAINT),
+            (None, Some(_)) if unpublished && cfg!(target_os = "macos") => ("The Mac version of Project Reboot isn't out yet. The launcher will install it as soon as it is.".to_string(), WARN),
             (None, Some(_)) if unpublished && !cfg!(windows) => (format!("The Linux version of Project Reboot isn't out yet. {}", config::PROTON_HELP), WARN),
             (None, Some(_)) if unpublished => (format!("No game build is published for {} yet.", config::PLATFORM), WARN),
             (None, Some(reason)) => (format!("Couldn't check the download size ({reason}). You can still pick a folder."), FAINT),
@@ -2456,8 +2477,12 @@ impl eframe::App for LauncherApp {
             self.handle(msg);
         }
         let now = ctx.input(|i| i.time);
-        if !self.busy() && !self.setup && now - self.server_checked > SERVER_RECHECK_SECONDS {
-            self.check_server(false);
+        let focused_now = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        let came_back = focused_now && !self.was_focused;
+        self.was_focused = focused_now;
+        let due = now - self.server_checked > SERVER_RECHECK_SECONDS || (came_back && now - self.server_checked > SERVER_FOCUS_RECHECK_SECONDS);
+        if due && !self.setup && !self.server_checking && !matches!(self.phase, Phase::SigningIn { .. }) {
+            self.check_server(true);
         }
         if let Phase::Playing { account, token } = &self.phase {
             if now - self.avatar_checked > AVATAR_RECHECK_SECONDS {

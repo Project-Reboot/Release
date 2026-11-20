@@ -2582,6 +2582,7 @@ name = "project-reboot-launcher"
 version = "0.2.11"
 dependencies = [
  "base64",
+ "core-foundation-sys",
  "eframe",
  "getrandom 0.2.17",
  "hex",

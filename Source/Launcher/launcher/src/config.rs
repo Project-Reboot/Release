@@ -8,11 +8,15 @@ pub const AUTH_URL: &str = "https://prod.portalworldsgame.com";
 pub const GAME_ADDRESS: &str = "prod.portalworldsgame.com:10001";
 #[cfg(windows)]
 pub const FILES_URL: &str = "https://raw.githubusercontent.com/Project-Reboot/Release/{ref}/PC/";
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub const FILES_URL: &str = "https://raw.githubusercontent.com/Project-Reboot/Release/{ref}/Mac/";
+#[cfg(not(any(windows, target_os = "macos")))]
 pub const FILES_URL: &str = "https://raw.githubusercontent.com/Project-Reboot/Release/{ref}/Linux/";
 #[cfg(windows)]
 pub const PLATFORM: &str = "Windows";
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub const PLATFORM: &str = "macOS";
+#[cfg(not(any(windows, target_os = "macos")))]
 pub const PLATFORM: &str = "Linux";
 pub const LAUNCHER_LIST_URL: &str = "https://raw.githubusercontent.com/Project-Reboot/Release/{ref}/";
 pub const FILES_REF_URL: &str = "https://api.github.com/repos/Project-Reboot/Release/commits/main";
@@ -22,7 +26,9 @@ pub const DISCORD_AUTHORIZE_URL: &str = "https://discord.com/oauth2/authorize";
 pub const REDIRECT_PORTS: [u16; 5] = [27654, 31827, 38219, 41593, 45761];
 #[cfg(windows)]
 pub const GAME_PREFS: &str = r"Software\RebootTeam\Project Reboot";
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub const GAME_PREFS: &str = "unity.RebootTeam.Project Reboot";
+#[cfg(not(any(windows, target_os = "macos")))]
 pub const GAME_PREFS: &str = "unity3d/RebootTeam/Project Reboot/prefs";
 pub const MANIFEST_PUBLIC_KEY: &str = "7bb9fabe872a2838416c25207c0e2dab3f99ec44c4ed4044e93913333e768d69";
 pub const DISCORD_URL: &str = "https://discord.gg/F35p8uwFzY";
@@ -63,6 +69,8 @@ fn home() -> PathBuf {
 pub fn data_dir() -> PathBuf {
     if cfg!(windows) {
         env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("ProjectReboot")
+    } else if cfg!(target_os = "macos") {
+        home().join("Library").join("Application Support").join("ProjectReboot")
     } else {
         env::var_os("XDG_DATA_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home().join(".local").join("share")).join("ProjectReboot")
     }
@@ -71,6 +79,8 @@ pub fn data_dir() -> PathBuf {
 fn unity_root() -> PathBuf {
     if cfg!(windows) {
         env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("AppData").join("LocalLow")
+    } else if cfg!(target_os = "macos") {
+        home().join("Library").join("Logs")
     } else {
         env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home().join(".config")).join("unity3d")
     }
@@ -88,8 +98,17 @@ pub fn client_log_dir(install_dir: &Path) -> PathBuf {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|entry| entry.file_name().to_string_lossy().ends_with("_Data"))
-        .find_map(|entry| fs::read_to_string(entry.path().join("app.info")).ok())
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with("_Data") {
+                Some(entry.path().join("app.info"))
+            } else if name.ends_with(".app") {
+                Some(entry.path().join("Contents").join("Resources").join("Data").join("app.info"))
+            } else {
+                None
+            }
+        })
+        .find_map(|info| fs::read_to_string(info).ok())
         .and_then(|info| {
             let mut lines = info.lines();
             Some((plain_name(lines.next()?)?, plain_name(lines.next()?)?))
@@ -112,7 +131,7 @@ pub fn client_log(install_dir: &Path) -> Option<(PathBuf, bool)> {
 }
 
 fn default_prefs_location() -> String {
-    if cfg!(windows) {
+    if cfg!(windows) || cfg!(target_os = "macos") {
         GAME_PREFS.to_string()
     } else {
         let config = env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home().join(".config"));
