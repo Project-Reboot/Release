@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.0" orientation="orthogonal" renderorder="right-down" width="64" height="64" tilewidth="80" tileheight="80" nextobjectid="1">
+ <tileset firstgid="1" name="Blocks" tilewidth="80" tileheight="80" tilecount="2">
+  <tile id="0">
+   <image width="80" height="80" source="../../Textures/Tiles/Dirt.PNG"/>
+  </tile>
+  <tile id="1">
+   <image width="80" height="80" source="../../Textures/Tiles/Grass.PNG"/>
+  </tile>
+ </tileset>
+ <tileset firstgid="3" name="TileProperties" tilewidth="80" tileheight="80" tilecount="1">
+  <tile id="0">
+   <image width="80" height="80" source="../../Textures/Tiles/start.png"/>
+  </tile>
+ </tileset>
+ <tileset firstgid="4" name="BlockBackground" tilewidth="80" tileheight="80" tilecount="1">
+  <tile id="0">
+   <image width="80" height="80" source="../../Textures/Tiles/Coat.PNG"/>
+  </tile>
+ </tileset>
+ <layer name="BlockBackground" width="64" height="64">
+  <data encoding="base64" compression="zlib">
+   eJztw7ENAAAMAiAH/7/ZO9pAQgIAAAAAAADAB1VVVVVVVVVV9fQBpd4iAQ==
+  </data>
+ </layer>
+ <layer name="Block" width="64" height="64">
+  <data encoding="base64" compression="zlib">
+   eJzt0jsOwzAMBFEn9z90qgBu9CEtiUjwBpjONLUrXRcAAAAAAAAAAAAA4B94B8zM3Gczc0+c2fkK+iUzF53Jeqf3XSZ/5P+n82fOtWrfaG+GzD9OvbFI/7080b5O5tj9LkZ7TueevZvTXVd0sHtfi+hb6LH7Xlb2m+mh9+3KDmZ3nsxfeYdPe2jNtqg86+p+ozM7zl3VQbav6oyjPBGy/6/OWt1v9VnkJ0mSJEmS5C/6AaatCBg=
+  </data>
+ </layer>
+ <layer name="TileProperties" width="64" height="64">
+  <data encoding="base64" compression="zlib">
+   eJztzkEJAAAIBLAD+3e2w30E2RIsAQAAAAAAAKAx1wEAAAAAAAAAAF5Zp7AABA==
+  </data>
+ </layer>
+</map>
