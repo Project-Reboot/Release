@@ -23,9 +23,10 @@ pub const WIDTH: f32 = 1180.0;
 pub const HEIGHT: f32 = 720.0;
 
 const SIDEBAR: f32 = 240.0;
-const HEADER: f32 = 127.0;
-const HERO: f32 = 355.0;
-const STRIP: f32 = 17.0;
+const HEADER: f32 = 108.0;
+const HERO: f32 = 364.0;
+const STRIP: f32 = 14.0;
+const SAFE: f32 = 20.0;
 
 const WINDOW: Color32 = Color32::from_rgb(0, 0, 0);
 const SIDE: Color32 = Color32::from_rgb(14, 14, 14);
@@ -1432,7 +1433,7 @@ fn excerpt(notes: &str, lines: usize) -> String {
 impl LauncherApp {
     fn window_controls(&mut self, ui: &mut egui::Ui, rect: Rect) {
         let painter = ui.painter().clone();
-        let drag = ui.interact(Rect::from_min_max(rect.min, Pos2::new(rect.right() - 92.0, rect.top() + 78.0)), Id::new("title-drag"), Sense::click_and_drag());
+        let drag = ui.interact(Rect::from_min_max(rect.min, Pos2::new(rect.right() - 92.0, rect.top() + 64.0)), Id::new("title-drag"), Sense::click_and_drag());
         if drag.drag_started() {
             ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
         }
@@ -1460,7 +1461,7 @@ impl LauncherApp {
         let (response, hover) = hit(ui, rect, key, label, true);
         let painter = ui.painter().clone();
         let on = ui.ctx().animate_bool_with_time(Id::new(("side-selected", key)), selected, 0.18);
-        painter.rect_filled(rect, CornerRadius::ZERO, mix(mix(Color32::TRANSPARENT, SIDE_HOVER, hover), SIDE_SELECTED, on));
+        painter.rect_filled(rect, CornerRadius::same(6), mix(mix(Color32::TRANSPARENT, SIDE_HOVER, hover), SIDE_SELECTED, on));
         (response.clicked(), painter)
     }
 
@@ -1468,66 +1469,66 @@ impl LauncherApp {
         let painter = ui.painter().clone();
         painter.rect_filled(rect, CornerRadius::ZERO, SIDE);
 
-        let plate = Rect::from_min_max(rect.min + Vec2::new(6.0, 10.0), Pos2::new(rect.right() - 4.0, rect.top() + 82.0));
+        let plate = Rect::from_min_max(rect.min + Vec2::new(12.0, 14.0), Pos2::new(rect.right() - 12.0, rect.top() + 84.0));
         painter.rect_filled(plate.translate(Vec2::new(0.0, 5.0)).shrink(3.0), CornerRadius::same(6), Color32::from_black_alpha(120));
         let signed = self.account_name.clone().or_else(|| self.discord_name.clone());
         nine(&painter, rank_table(if signed.is_some() { self.rank } else { None }), plate, Color32::WHITE);
-        let face = Pos2::new(plate.left() + 40.0, plate.center().y);
-        let names = Rect::from_min_max(Pos2::new(plate.left() + 72.0, plate.top() + 4.0), Pos2::new(plate.right() - 12.0, plate.bottom() - 4.0));
+        let face = Pos2::new(plate.left() + 36.0, plate.center().y);
+        let names = Rect::from_min_max(Pos2::new(plate.left() + 64.0, plate.top() + 4.0), Pos2::new(plate.right() - 12.0, plate.bottom() - 4.0));
         let clip = painter.with_clip_rect(names);
         match &signed {
             Some(name) => {
                 let own = self.account_name.as_ref();
                 match self.avatar.as_ref().filter(|(owner, _, _)| Some(owner) == own) {
-                    Some((_, picture, focus)) => character(&painter, picture, *focus, face, 27.0),
+                    Some((_, picture, focus)) => character(&painter, picture, *focus, face, 24.0),
                     None => {
-                        painter.circle_filled(face, 22.0, Color32::from_black_alpha(90));
-                        outlined(&painter, face, Align2::CENTER_CENTER, &initial(name), heavy(22.0), Color32::WHITE, 1.5);
+                        painter.circle_filled(face, 20.0, Color32::from_black_alpha(90));
+                        outlined(&painter, face, Align2::CENTER_CENTER, &initial(name), heavy(20.0), Color32::WHITE, 1.5);
                     }
                 }
                 let label = rank_label(self.rank).filter(|_| self.account_name.is_some());
-                let font = heavy(if name.chars().count() > 9 { 21.0 } else { 28.0 });
+                let font = heavy(if name.chars().count() > 9 { 18.0 } else { 23.0 });
                 let shown = if painter.layout_no_wrap(name.clone(), font.clone(), TEXT).size().x > names.width() { ellipsize(&painter, name, font.clone(), names.width()) } else { name.clone() };
-                let name_y = if label.is_some() { names.center().y - 9.0 } else { names.center().y };
+                let name_y = if label.is_some() { names.center().y - 8.0 } else { names.center().y };
                 outlined(&clip, Pos2::new(names.center().x, name_y), Align2::CENTER_CENTER, &shown, font, Color32::WHITE, 1.5);
                 if let Some(label) = label {
-                    outlined(&clip, Pos2::new(names.center().x, name_y + 23.0), Align2::CENTER_CENTER, label, heavy(13.0), Color32::from_gray(225), 1.0);
+                    outlined(&clip, Pos2::new(names.center().x, name_y + 20.0), Align2::CENTER_CENTER, label, heavy(12.0), Color32::from_gray(225), 1.0);
                 }
             }
             None => {
-                image(&painter, &self.art.avatar, Rect::from_center_size(face, Vec2::splat(44.0)));
-                outlined(&clip, names.center(), Align2::CENTER_CENTER, "Not signed in", heavy(17.0), Color32::WHITE, 1.2);
+                image(&painter, &self.art.avatar, Rect::from_center_size(face, Vec2::splat(40.0)));
+                outlined(&clip, names.center(), Align2::CENTER_CENTER, "Not signed in", heavy(15.5), Color32::WHITE, 1.2);
             }
         }
 
-        let game = Rect::from_min_max(Pos2::new(rect.left() + 6.0, rect.top() + 94.0), Pos2::new(rect.right(), rect.top() + 170.0));
+        let game = Rect::from_min_max(Pos2::new(rect.left() + 12.0, rect.top() + 100.0), Pos2::new(rect.right() - 12.0, rect.top() + 164.0));
         let (clicked, item) = self.side_item(ui, game, "side-game", "Project Reboot", matches!(self.page, Page::Play | Page::Notes | Page::Videos));
-        image(&item, &self.art.icon, Rect::from_center_size(Pos2::new(game.left() + 37.0, game.center().y), Vec2::splat(60.0)));
+        image(&item, &self.art.icon, Rect::from_center_size(Pos2::new(game.left() + 32.0, game.center().y), Vec2::splat(48.0)));
         let title_y = if self.wine.is_some() { game.center().y - 8.0 } else { game.center().y };
-        outlined(&item, Pos2::new(game.left() + 76.0, title_y), Align2::LEFT_CENTER, "Project Reboot", heavy(20.0), Color32::WHITE, 1.5);
+        outlined(&item, Pos2::new(game.left() + 64.0, title_y), Align2::LEFT_CENTER, "Project Reboot", heavy(17.0), Color32::WHITE, 1.5);
         if self.wine.is_some() {
-            text(&item, Pos2::new(game.left() + 77.0, title_y + 20.0), Align2::LEFT_CENTER, "Windows · Proton", semi(12.0), MUTED);
+            text(&item, Pos2::new(game.left() + 65.0, title_y + 19.0), Align2::LEFT_CENTER, "Windows · Proton", semi(11.5), MUTED);
         }
         if clicked {
             self.go(Page::Play);
         }
 
-        let logs = Rect::from_center_size(Pos2::new(rect.left() + 121.0, rect.bottom() - 38.0), Vec2::new(216.0, 60.0));
-        let settings = logs.translate(Vec2::new(0.0, -64.0));
-        let news = settings.translate(Vec2::new(0.0, -64.0));
-        let line = news.top() - 20.0;
-        painter.line_segment([Pos2::new(rect.left() + 10.0, line), Pos2::new(rect.right() - 10.0, line)], Stroke::new(3.0, EDGE));
-        text(&painter, Pos2::new(rect.left() + 16.0, line - 14.0), Align2::LEFT_CENTER, format!("Launcher v{CURRENT_VERSION}"), semi(11.0), Color32::from_gray(95));
+        let logs = Rect::from_min_max(Pos2::new(rect.left() + 12.0, rect.bottom() - SAFE + 6.0 - 50.0), Pos2::new(rect.right() - 12.0, rect.bottom() - SAFE + 6.0));
+        let settings = logs.translate(Vec2::new(0.0, -54.0));
+        let news = settings.translate(Vec2::new(0.0, -54.0));
+        let line = news.top() - 14.0;
+        painter.line_segment([Pos2::new(rect.left() + 16.0, line), Pos2::new(rect.right() - 16.0, line)], Stroke::new(2.0, EDGE));
+        text(&painter, Pos2::new(rect.left() + 18.0, line - 13.0), Align2::LEFT_CENTER, format!("Launcher v{CURRENT_VERSION}"), semi(11.0), Color32::from_gray(95));
         let entries = [
-            (news, "side-news", "What\u{2019}s new", Page::Notes, self.art.whats_new.clone(), 46.0),
-            (settings, "side-settings", "Settings", Page::Settings, self.art.settings.clone(), 46.0),
-            (logs, "side-logs", "Logs", Page::Logs, self.art.console.clone(), 50.0),
+            (news, "side-news", "What\u{2019}s new", Page::Notes, self.art.whats_new.clone(), 34.0),
+            (settings, "side-settings", "Settings", Page::Settings, self.art.settings.clone(), 34.0),
+            (logs, "side-logs", "Logs", Page::Logs, self.art.console.clone(), 37.0),
         ];
         for (place, key, label, page, icon, size) in entries {
             let (clicked, item) = self.side_item(ui, place, key, label, self.page == page);
             let box_size = icon.size_vec2() * (size / icon.size_vec2().max_elem());
-            image(&item, &icon, Rect::from_center_size(Pos2::new(place.left() + 34.0, place.center().y), box_size));
-            outlined(&item, Pos2::new(place.left() + 70.0, place.center().y), Align2::LEFT_CENTER, label, heavy(25.0), Color32::WHITE, 1.5);
+            image(&item, &icon, Rect::from_center_size(Pos2::new(place.left() + 30.0, place.center().y), box_size));
+            outlined(&item, Pos2::new(place.left() + 60.0, place.center().y), Align2::LEFT_CENTER, label, heavy(19.0), Color32::WHITE, 1.5);
             if clicked {
                 self.go(page);
             }
@@ -1538,14 +1539,14 @@ impl LauncherApp {
         let painter = ui.painter().clone();
         painter.rect_filled(rect, CornerRadius::ZERO, HEADER_BG);
         self.window_controls(ui, rect);
-        outlined(&painter, Pos2::new(rect.center().x, rect.top() + 26.0), Align2::CENTER_CENTER, "Project Reboot", heavy(26.0), TITLE_GREY, 1.5);
+        outlined(&painter, Pos2::new(rect.center().x, rect.top() + 26.0), Align2::CENTER_CENTER, "Project Reboot", heavy(21.0), TITLE_GREY, 1.5);
         let version = self.version_text();
         let version = if version.starts_with(|c: char| c.is_ascii_digit()) { format!("v {version}") } else { version };
-        outlined(&painter, Pos2::new(rect.center().x, rect.top() + 55.0), Align2::CENTER_CENTER, &version, heavy(23.0), TITLE_GREY, 1.5);
-        let font = heavy(24.0);
+        outlined(&painter, Pos2::new(rect.center().x, rect.top() + 49.0), Align2::CENTER_CENTER, &version, heavy(15.0), TITLE_GREY, 1.2);
+        let font = heavy(20.0);
         let width = |label: &str| painter.layout_no_wrap(label.to_string(), font.clone(), TEXT).size().x;
         let mut placed: Vec<(Page, &str, f32, f32)> = Vec::new();
-        let mut x = rect.left() + 30.0;
+        let mut x = rect.left() + SAFE + 8.0;
         let mut left = vec![(Page::Play, "Play")];
         match self.page {
             Page::Settings => left.push((Page::Settings, "Settings")),
@@ -1555,19 +1556,19 @@ impl LauncherApp {
         for (page, label) in left {
             let w = width(label);
             placed.push((page, label, x, w));
-            x += w + 30.0;
+            x += w + 28.0;
         }
-        let mut x = rect.right() - 30.0;
+        let mut x = rect.right() - SAFE - 8.0;
         for (page, label) in [(Page::Videos, "Videos"), (Page::Notes, "Patch Notes")] {
             let w = width(label);
             x -= w;
             placed.push((page, label, x, w));
-            x -= 30.0;
+            x -= 28.0;
         }
-        let y = rect.top() + 101.0;
+        let y = rect.top() + 84.0;
         let mut underline = None;
         for (page, label, x, w) in placed {
-            let area = Rect::from_min_size(Pos2::new(x - 8.0, y - 18.0), Vec2::new(w + 16.0, 36.0));
+            let area = Rect::from_min_size(Pos2::new(x - 8.0, y - 16.0), Vec2::new(w + 16.0, 32.0));
             let (response, hover) = hit(ui, area, &format!("tab-{label}"), label, true);
             let active = self.page == page;
             let color = if active { Color32::WHITE } else { mix(TAB_GREY, Color32::from_gray(215), hover) };
@@ -1583,7 +1584,7 @@ impl LauncherApp {
             let ctx = ui.ctx();
             let ux = ctx.animate_value_with_time(Id::new("tab-underline-x"), target_x, 0.22);
             let uw = ctx.animate_value_with_time(Id::new("tab-underline-w"), target_w, 0.22);
-            painter.rect_filled(Rect::from_min_size(Pos2::new(ux, rect.bottom() - 6.0), Vec2::new(uw, 4.0)), CornerRadius::ZERO, MAGENTA);
+            painter.rect_filled(Rect::from_min_size(Pos2::new(ux, rect.bottom() - 7.0), Vec2::new(uw, 3.0)), CornerRadius::ZERO, MAGENTA);
         }
     }
 
@@ -1593,8 +1594,8 @@ impl LauncherApp {
         let hero = Rect::from_min_size(origin, Vec2::new(width, HERO));
         cover(&painter, self.cover.texture(), hero, 0.5);
         vertical_fade(&painter, Rect::from_min_max(Pos2::new(hero.left(), hero.bottom() - 70.0), hero.max), Color32::TRANSPARENT, Color32::from_black_alpha(110));
-        let logo = fit_width(&self.art.logo, (width * 0.29).min(290.0));
-        image(&painter, &self.art.logo, Rect::from_center_size(Pos2::new(hero.center().x, hero.top() + logo.y / 2.0), logo));
+        let logo = fit_width(&self.art.logo, (width * 0.26).min(250.0));
+        image(&painter, &self.art.logo, Rect::from_center_size(Pos2::new(hero.center().x, hero.top() + SAFE + logo.y / 2.0), logo));
         let strip = Rect::from_min_size(hero.left_bottom(), Vec2::new(width, STRIP));
 
         let ready = self.installed.is_some();
@@ -1638,7 +1639,7 @@ impl LauncherApp {
             }
         }
 
-        let play = Rect::from_center_size(Pos2::new(hero.center().x, hero.bottom()), Vec2::new(250.0, 70.0));
+        let play = Rect::from_center_size(Pos2::new(hero.center().x, hero.bottom() + STRIP / 2.0), Vec2::new(236.0, 66.0));
         let (response, hover) = hit(ui, play, "play-button", &label, enabled);
         if enabled {
             let pulse = ((time * 2.2).sin() as f32 * 0.5 + 0.5) * 0.6 + 0.4;
@@ -1658,7 +1659,7 @@ impl LauncherApp {
             self.start_update();
         }
 
-        let status_y = play.bottom() + 20.0;
+        let status_y = play.bottom() + 18.0;
         let is_ready = matches!(self.phase, Phase::Ready);
         let detail: Option<(String, Color32)> = match (&self.phase, &self.installed) {
             (Phase::Ready, None) => Some(("It downloads automatically before you play".into(), MUTED)),
@@ -1717,20 +1718,20 @@ impl LauncherApp {
             api::ServerState::Offline => (ERROR, "Server offline"),
         };
         if !matches!(self.phase, Phase::SigningIn { .. }) {
-            let at = Pos2::new(origin.x + 30.0, strip.bottom() + 36.0);
+            let at = Pos2::new(origin.x + SAFE + 10.0, strip.bottom() + 32.0);
             painter.circle_filled(at, 6.0, INK);
             painter.circle_filled(at, 4.5, dot);
             outlined(&painter, at + Vec2::new(14.0, 0.0), Align2::LEFT_CENTER, server, heavy(15.5), MUTED, 1.0);
         }
 
-        let mut x = origin.x + width - 26.0;
-        let icon_y = strip.bottom() + 38.0;
+        let mut x = origin.x + width - SAFE - 4.0;
+        let icon_y = strip.bottom() + 32.0;
         let mut links: Vec<(&str, &str, TextureHandle, f32, &str)> = Vec::new();
         if !config::DISCORD_URL.is_empty() {
-            links.push(("link-discord", "Discord server", self.art.discord.clone(), 54.0, config::DISCORD_URL));
+            links.push(("link-discord", "Discord server", self.art.discord.clone(), 46.0, config::DISCORD_URL));
         }
         if !config::YOUTUBE_URL.is_empty() {
-            links.push(("link-youtube", "YouTube channel", self.art.youtube_icon.clone(), 58.0, config::YOUTUBE_URL));
+            links.push(("link-youtube", "YouTube channel", self.art.youtube_icon.clone(), 50.0, config::YOUTUBE_URL));
         }
         for (key, label, icon, size, url) in links {
             let shown = fit_width(&icon, size);
@@ -1743,10 +1744,10 @@ impl LauncherApp {
             x = place.left() - 18.0;
         }
 
-        let row_top = strip.bottom() + 88.0;
-        let row_h = 112.0;
-        let left = origin.x + 24.0;
-        let inner = width - 48.0;
+        let row_h = 110.0;
+        let row_top = (strip.bottom() + 84.0).max(origin.y + HEIGHT - HEADER - SAFE - row_h);
+        let left = origin.x + SAFE;
+        let inner = width - SAFE * 2.0;
         let newest_video = self.playlists.newest(1).into_iter().next();
         let patch_width = if newest_video.is_some() { (inner * 0.54).floor() } else { inner };
         let newest = self.posts().into_iter().next();
@@ -1779,7 +1780,7 @@ impl LauncherApp {
                 }
             }
         }
-        row_top + row_h + 14.0 - origin.y
+        row_top + row_h + SAFE - origin.y
     }
 
     #[allow(clippy::too_many_arguments)]

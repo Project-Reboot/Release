@@ -2544,7 +2544,7 @@ dependencies = [
 
 [[package]]
 name = "pr-manifest"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "ed25519-dalek",
  "hex",
@@ -2579,7 +2579,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "project-reboot-launcher"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "base64",
  "eframe",
