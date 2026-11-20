@@ -229,6 +229,8 @@ pub struct LauncherApp {
     poster: Option<TextureHandle>,
     log_text: String,
     client_log: bool,
+    log_checked: f64,
+    log_seen: Option<(std::path::PathBuf, u64, Option<std::time::SystemTime>)>,
     sign_in_link: Option<String>,
     wine: Option<String>,
     news_selected: Option<String>,
@@ -380,6 +382,8 @@ impl LauncherApp {
             poster: None,
             log_text: String::new(),
             client_log: false,
+            log_checked: 0.0,
+            log_seen: None,
             sign_in_link: None,
             wine: game::wine_version(),
             news_selected: None,
@@ -1949,6 +1953,16 @@ impl LauncherApp {
         } else {
             (log::path(), log::dir())
         };
+        let now = ui.input(|i| i.time);
+        if now - self.log_checked >= 1.0 {
+            self.log_checked = now;
+            let seen = std::fs::metadata(&file).ok().map(|m| (file.clone(), m.len(), m.modified().ok()));
+            if seen != self.log_seen {
+                self.log_seen = seen;
+                self.log_text = self.read_log(96 * 1024);
+            }
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
         let description = if !self.client_log {
             "If something goes wrong, copy this and share it with Project Reboot staff. It never contains passwords, login tokens or Discord details."
         } else if matches!(client, Some((_, true))) {
@@ -1978,7 +1992,7 @@ impl LauncherApp {
         let body = Rect::from_min_max(Pos2::new(inner_left, row.y + BUTTON_H + GAP), frame.max - Vec2::splat(PAD));
         painter.rect_filled(body, CornerRadius::same(4), Color32::from_rgb(18, 18, 18));
         painter.rect_stroke(body, CornerRadius::same(8), Stroke::new(1.0, EDGE), StrokeKind::Inside);
-        let empty = if self.client_log { "The game hasn't written a log yet. Start the game once, then press Refresh." } else { "The log is empty." };
+        let empty = if self.client_log { "The game hasn't written a log yet. It shows up here as soon as the game starts." } else { "The log is empty." };
         let shown = if self.log_text.trim().is_empty() { empty.to_string() } else { self.log_text.clone() };
         let client_view = self.client_log;
         ui.scope_builder(UiBuilder::new().max_rect(body.shrink(16.0)), |ui| {
