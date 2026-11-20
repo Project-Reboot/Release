@@ -68,6 +68,49 @@ pub fn data_dir() -> PathBuf {
     }
 }
 
+fn unity_root() -> PathBuf {
+    if cfg!(windows) {
+        env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("AppData").join("LocalLow")
+    } else {
+        env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home().join(".config")).join("unity3d")
+    }
+}
+
+fn plain_name(value: &str) -> Option<String> {
+    let value = value.trim();
+    let ok = !value.is_empty() && value != "." && value != ".." && !value.contains(['/', '\\', ':']);
+    ok.then(|| value.to_string())
+}
+
+pub fn client_log_dir(install_dir: &Path) -> PathBuf {
+    let names = fs::read_dir(install_dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with("_Data"))
+        .find_map(|entry| fs::read_to_string(entry.path().join("app.info")).ok())
+        .and_then(|info| {
+            let mut lines = info.lines();
+            Some((plain_name(lines.next()?)?, plain_name(lines.next()?)?))
+        });
+    let (company, product) = names.unwrap_or_else(|| ("RebootTeam".into(), "Project Reboot".into()));
+    unity_root().join(company).join(product)
+}
+
+pub fn client_log(install_dir: &Path) -> Option<(PathBuf, bool)> {
+    let dir = client_log_dir(install_dir);
+    let current = dir.join("Player.log");
+    if fs::metadata(&current).map(|m| m.len() > 0).unwrap_or(false) {
+        return Some((current, false));
+    }
+    let previous = dir.join("Player-prev.log");
+    if previous.is_file() {
+        return Some((previous, true));
+    }
+    current.is_file().then_some((current, false))
+}
+
 fn default_prefs_location() -> String {
     if cfg!(windows) {
         GAME_PREFS.to_string()
@@ -242,6 +285,17 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_log_folder_comes_from_app_info_and_ignores_unsafe_names() {
+        let install = scratch("client-log");
+        fs::create_dir_all(install.join("Game_Data")).unwrap();
+        fs::write(install.join("Game_Data").join("app.info"), "Studio\nGame Name").unwrap();
+        assert!(client_log_dir(&install).ends_with(Path::new("Studio").join("Game Name")));
+        fs::write(install.join("Game_Data").join("app.info"), "..\n../escape").unwrap();
+        assert!(client_log_dir(&install).ends_with(Path::new("RebootTeam").join("Project Reboot")));
+        let _ = fs::remove_dir_all(&install);
+    }
 
     fn scratch(name: &str) -> PathBuf {
         let dir = env::temp_dir().join(format!("pr-launcher-target-{name}-{}", std::process::id()));

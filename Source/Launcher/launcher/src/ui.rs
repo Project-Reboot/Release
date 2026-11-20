@@ -228,6 +228,7 @@ pub struct LauncherApp {
     art: Art,
     poster: Option<TextureHandle>,
     log_text: String,
+    client_log: bool,
     sign_in_link: Option<String>,
     wine: Option<String>,
     news_selected: Option<String>,
@@ -378,6 +379,7 @@ impl LauncherApp {
             art: Art::load(&ctx),
             poster: None,
             log_text: String::new(),
+            client_log: false,
             sign_in_link: None,
             wine: game::wine_version(),
             news_selected: None,
@@ -446,7 +448,7 @@ impl LauncherApp {
 
     fn go(&mut self, page: Page) {
         if page == Page::Logs {
-            self.log_text = log::tail(96 * 1024);
+            self.log_text = self.read_log(96 * 1024);
         }
         if page == Page::Notes && self.news_checked.map(|at| self.ctx.input(|i| i.time) - at > 300.0).unwrap_or(false) {
             self.fetch_news();
@@ -1908,37 +1910,90 @@ impl LauncherApp {
         frame.bottom() + PAD - origin.y
     }
 
+    fn read_log(&self, max_bytes: u64) -> String {
+        if self.client_log {
+            config::client_log(&self.cfg.install_dir).map(|(path, _)| log::tail_file(&path, max_bytes)).unwrap_or_default()
+        } else {
+            log::tail(max_bytes)
+        }
+    }
+
     fn logs_page(&mut self, ui: &mut egui::Ui, origin: Pos2, width: f32, height: f32) -> f32 {
         let painter = ui.painter().clone();
         let frame = Rect::from_min_size(origin + Vec2::new(PAD, PAD), Vec2::new(width - PAD * 2.0, (height - PAD * 2.0).max(440.0)));
         card(&painter, frame, 0.0);
         let inner_left = frame.left() + PAD;
-        let used = section_title(&painter, Pos2::new(inner_left, frame.top() + PAD), "Launcher log", "If something goes wrong, copy this and share it with Project Reboot staff. It never contains passwords, login tokens or Discord details.", frame.width() - PAD * 2.0);
-        let has_log = log::path().is_file();
-        let row = Pos2::new(inner_left, frame.top() + PAD + used + 18.0);
-        match button_row(ui, row, &[("log-copy", "Copy log", true, has_log), ("log-refresh", "Refresh", false, true), ("log-open", "Open log file", false, has_log), ("log-folder", "Open folder", false, has_log)]).as_deref() {
-            Some("log-copy") => {
-                ui.ctx().copy_text(log::tail(256 * 1024));
-                self.notice = Some("The launcher log is copied to your clipboard.".into());
+        let tabs_y = frame.top() + PAD + 10.0;
+        let tab_font = heavy(18.0);
+        let mut x = inner_left;
+        for (client, label) in [(false, "Launcher logs"), (true, "Client logs")] {
+            let w = painter.layout_no_wrap(label.to_string(), tab_font.clone(), TEXT).size().x;
+            let area = Rect::from_min_size(Pos2::new(x - 8.0, tabs_y - 16.0), Vec2::new(w + 16.0, 34.0));
+            let (response, hover) = hit(ui, area, &format!("log-tab-{client}"), label, true);
+            let active = self.client_log == client;
+            let color = if active { Color32::WHITE } else { mix(TAB_GREY, Color32::from_gray(215), hover) };
+            outlined(&painter, Pos2::new(x, tabs_y), Align2::LEFT_CENTER, label, tab_font.clone(), color, 1.2);
+            if active {
+                painter.rect_filled(Rect::from_min_size(Pos2::new(x, tabs_y + 14.0), Vec2::new(w, 3.0)), CornerRadius::ZERO, MAGENTA);
             }
-            Some("log-refresh") => self.log_text = log::tail(96 * 1024),
+            if response.clicked() && !active {
+                self.client_log = client;
+                self.log_text = self.read_log(96 * 1024);
+            }
+            x += w + 30.0;
+        }
+        let client = if self.client_log { config::client_log(&self.cfg.install_dir) } else { None };
+        let (file, folder) = if self.client_log {
+            let folder = config::client_log_dir(&self.cfg.install_dir);
+            (client.as_ref().map(|(path, _)| path.clone()).unwrap_or_else(|| folder.join("Player.log")), folder)
+        } else {
+            (log::path(), log::dir())
+        };
+        let description = if !self.client_log {
+            "If something goes wrong, copy this and share it with Project Reboot staff. It never contains passwords, login tokens or Discord details."
+        } else if matches!(client, Some((_, true))) {
+            "The game's own log from your last session. If the game crashed or acted up, copy this and share it with Project Reboot staff."
+        } else {
+            "The game's own log. If the game crashes or acts up, copy this and share it with Project Reboot staff."
+        };
+        let galley = painter.layout(description.to_string(), regular(13.5), MUTED, frame.width() - PAD * 2.0);
+        let used = 32.0 + galley.size().y;
+        painter.galley(Pos2::new(inner_left, frame.top() + PAD + 32.0), galley, MUTED);
+        let has_log = file.is_file();
+        let row = Pos2::new(inner_left, frame.top() + PAD + used + 18.0);
+        match button_row(ui, row, &[("log-copy", "Copy log", true, has_log), ("log-refresh", "Refresh", false, true), ("log-open", "Open log file", false, has_log), ("log-folder", "Open folder", false, folder.is_dir())]).as_deref() {
+            Some("log-copy") => {
+                ui.ctx().copy_text(self.read_log(256 * 1024));
+                self.notice = Some(if self.client_log { "The client log is copied to your clipboard." } else { "The launcher log is copied to your clipboard." }.into());
+            }
+            Some("log-refresh") => self.log_text = self.read_log(96 * 1024),
             Some("log-open") => {
-                let _ = open::that_detached(log::path());
+                let _ = open::that_detached(&file);
             }
             Some("log-folder") => {
-                let _ = open::that_detached(log::dir());
+                let _ = open::that_detached(&folder);
             }
             _ => {}
         }
         let body = Rect::from_min_max(Pos2::new(inner_left, row.y + BUTTON_H + GAP), frame.max - Vec2::splat(PAD));
         painter.rect_filled(body, CornerRadius::same(4), Color32::from_rgb(18, 18, 18));
         painter.rect_stroke(body, CornerRadius::same(8), Stroke::new(1.0, EDGE), StrokeKind::Inside);
-        let shown = if self.log_text.trim().is_empty() { "The log is empty.".to_string() } else { self.log_text.clone() };
+        let empty = if self.client_log { "The game hasn't written a log yet. Start the game once, then press Refresh." } else { "The log is empty." };
+        let shown = if self.log_text.trim().is_empty() { empty.to_string() } else { self.log_text.clone() };
+        let client_view = self.client_log;
         ui.scope_builder(UiBuilder::new().max_rect(body.shrink(16.0)), |ui| {
             ui.spacing_mut().item_spacing.y = 3.0;
-            egui::ScrollArea::vertical().id_salt("log-scroll").stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt(("log-scroll", client_view)).stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
                 for line in shown.lines() {
-                    let color = if line.contains("] ERROR") { ERROR } else if line.contains("] WARN") { WARN } else { Color32::from_rgb(196, 214, 238) };
+                    let color = if client_view {
+                        if line.contains("Exception") || line.contains("Error") || line.contains("error") { ERROR } else if line.contains("Warning") { WARN } else { Color32::from_rgb(196, 214, 238) }
+                    } else if line.contains("] ERROR") {
+                        ERROR
+                    } else if line.contains("] WARN") {
+                        WARN
+                    } else {
+                        Color32::from_rgb(196, 214, 238)
+                    };
                     ui.add(egui::Label::new(egui::RichText::new(line).font(FontId::monospace(12.5)).color(color)).wrap());
                 }
             });

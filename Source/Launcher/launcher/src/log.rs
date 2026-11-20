@@ -67,7 +67,11 @@ pub fn error(message: impl AsRef<str>) {
 
 pub fn tail(max_bytes: u64) -> String {
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let Ok(mut file) = fs::File::open(path()) else {
+    tail_file(&path(), max_bytes)
+}
+
+pub fn tail_file(path: &std::path::Path, max_bytes: u64) -> String {
+    let Ok(mut file) = fs::File::open(path) else {
         return String::new();
     };
     let length = file.metadata().map(|m| m.len()).unwrap_or(0);
