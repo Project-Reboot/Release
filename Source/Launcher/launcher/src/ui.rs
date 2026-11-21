@@ -2254,6 +2254,11 @@ impl LauncherApp {
         let page = self.page;
         ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
             ui.multiply_opacity(t);
+            if page == Page::Logs {
+                ui.set_clip_rect(rect.intersect(ui.clip_rect()));
+                self.logs_page(ui, rect.min + Vec2::new(0.0, offset), rect.width(), rect.height());
+                return;
+            }
             egui::ScrollArea::vertical().id_salt(("page-scroll", page)).auto_shrink([false, false]).show(ui, |ui| {
                 let origin = ui.max_rect().min + Vec2::new(0.0, offset);
                 let width = rect.width();
@@ -2261,7 +2266,7 @@ impl LauncherApp {
                     Page::Play => self.play_page(ui, origin, width),
                     Page::Notes => self.notes_page(ui, origin, width, rect.height()),
                     Page::Videos => self.videos_page(ui, origin, width),
-                    Page::Logs => self.logs_page(ui, origin, width, rect.height()),
+                    Page::Logs => 0.0,
                     Page::Settings => self.settings_page(ui, origin, width),
                 };
                 ui.set_min_size(Vec2::new(width, used.max(rect.height()) - offset));
