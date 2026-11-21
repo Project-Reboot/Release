@@ -76,6 +76,8 @@ struct Health {
     #[serde(rename = "passwordSignIn", default)]
     password_sign_in: bool,
     #[serde(default)]
+    register: bool,
+    #[serde(default)]
     maintenance: Option<String>,
     #[serde(rename = "maintenanceStarts", default)]
     maintenance_starts: Option<String>,
@@ -268,6 +270,17 @@ pub struct SignIn {
     #[serde(rename = "displayName", default)]
     pub display_name: String,
     pub accounts: Vec<String>,
+    #[serde(rename = "canCreate", default)]
+    pub can_create: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct Registration {
+    pub token: String,
+    pub account: String,
+    #[serde(default)]
+    pub remember: String,
+    pub password: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -326,6 +339,18 @@ fn avatar_for(agent: &ureq::Agent, cfg: &Config, body: Value) -> Option<Avatar> 
     let png = base64::engine::general_purpose::STANDARD.decode(answer.png).ok()?;
     let name = answer.name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty() && n.len() <= 32);
     Some(Avatar { png, rank: answer.rank, name })
+}
+
+pub fn made_account() -> bool {
+    cache_path("created-account.txt").is_file()
+}
+
+pub fn mark_made_account(account: &str) {
+    let path = cache_path("created-account.txt");
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(path, account);
 }
 
 pub fn cached_account() -> Option<String> {
@@ -399,8 +424,17 @@ fn post(agent: &ureq::Agent, url: &str, body: Value) -> Result<Value, String> {
 }
 
 pub fn sign_in(agent: &ureq::Agent, cfg: &Config, code: &str, redirect_uri: &str, verifier: &str) -> Result<SignIn, String> {
-    let value = post(agent, &format!("{}/launcher/signin", cfg.auth_url), json!({ "code": code, "redirectUri": redirect_uri, "codeVerifier": verifier }))?;
+    let value = post(agent, &format!("{}/launcher/signin", cfg.auth_url), json!({ "code": code, "redirectUri": redirect_uri, "codeVerifier": verifier, "allowNew": true }))?;
     serde_json::from_value(value).map_err(|_| "The Project Reboot server sent an answer the launcher did not understand.".to_string())
+}
+
+pub fn register(agent: &ureq::Agent, cfg: &Config, session: &str) -> Result<Registration, String> {
+    let value = post(agent, &format!("{}/launcher/register", cfg.auth_url), json!({ "session": session }))?;
+    let made: Registration = serde_json::from_value(value).map_err(|_| "The Project Reboot server sent an answer the launcher did not understand.".to_string())?;
+    if made.account.is_empty() || made.account.len() > 64 || made.password.is_empty() || made.password.len() > 128 {
+        return Err("The Project Reboot server sent an answer the launcher did not understand.".to_string());
+    }
+    Ok(made)
 }
 
 pub fn password_sign_in(agent: &ureq::Agent, cfg: &Config, name: &str, password: &str) -> Result<Ticket, String> {
@@ -544,11 +578,22 @@ pub fn plain_line(line: &str) -> &str {
     trimmed.trim_end()
 }
 
+static REGISTER_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn register_open() -> bool {
+    REGISTER_OPEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn health_allows_register(bytes: &[u8]) -> bool {
+    serde_json::from_slice::<Health>(bytes).map(|h| h.ok && h.sign_in && h.register).unwrap_or(false)
+}
+
 fn parse_health(bytes: &[u8]) -> Option<ServerState> {
     let health: Health = serde_json::from_slice(bytes).ok()?;
     if !health.ok {
         return None;
     }
+
     let (sign_in, password) = (health.sign_in, health.password_sign_in);
     Some(match health.maintenance.as_deref() {
         Some("active") => ServerState::Maintenance { sign_in, password },
@@ -596,8 +641,11 @@ pub fn server_state(cfg: &Config, may_probe_game_port: bool) -> Option<ServerSta
         .timeout_read(Duration::from_secs(4))
         .build();
     if let Ok(response) = quick.get(&format!("{}/launcher/health", cfg.auth_url)).call() {
-        if let Some(state) = read_limited(response, 16 * 1024).ok().and_then(|bytes| parse_health(&bytes)) {
-            return Some(state);
+        if let Ok(bytes) = read_limited(response, 16 * 1024) {
+            if let Some(state) = parse_health(&bytes) {
+                REGISTER_OPEN.store(health_allows_register(&bytes), std::sync::atomic::Ordering::Relaxed);
+                return Some(state);
+            }
         }
     }
     may_probe_game_port.then(|| game_port_state(&cfg.game_address))
@@ -725,6 +773,9 @@ mod tests {
     fn the_health_check_reads_sign_in_and_maintenance() {
         assert_eq!(parse_health(br#"{"ok":true,"signIn":true,"passwordSignIn":true,"maintenance":"none"}"#), Some(ServerState::Online { sign_in: true, password: true }));
         assert_eq!(parse_health(br#"{"ok":true}"#), Some(ServerState::Online { sign_in: false, password: false }));
+        assert!(health_allows_register(br#"{"ok":true,"signIn":true,"register":true}"#));
+        assert!(!health_allows_register(br#"{"ok":true,"signIn":false,"register":true}"#));
+        assert!(!health_allows_register(br#"{"ok":true,"signIn":true}"#));
         assert_eq!(parse_health(br#"{"ok":true,"signIn":true,"maintenance":"active"}"#), Some(ServerState::Maintenance { sign_in: true, password: false }));
         assert_eq!(
             parse_health(br#"{"ok":true,"maintenance":"scheduled","maintenanceStarts":"2026-11-19T18:30:00Z"}"#),

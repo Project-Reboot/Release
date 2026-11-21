@@ -89,6 +89,110 @@ pub fn tail_file(path: &std::path::Path, max_bytes: u64) -> String {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Severity {
+    Normal,
+    Warning,
+    Error,
+    Crash,
+}
+
+const CRASH_MARKERS: [&str; 14] = [
+    "crash!!!",
+    "received signal sig",
+    "sigsegv",
+    "sigabrt",
+    "sigbus",
+    "sigill",
+    "native crash",
+    "outputting stack trace",
+    "fatal error",
+    "segmentation fault",
+    "core dumped",
+    "unhandled exception",
+    "panicked at",
+    "access violation",
+];
+
+fn has_word(lower: &str, word: &str) -> bool {
+    lower.match_indices(word).any(|(at, _)| {
+        let before = lower[..at].chars().next_back();
+        let after = lower[at + word.len()..].chars().next();
+        !before.is_some_and(|c| c.is_ascii_alphabetic()) && !after.is_some_and(|c| c.is_ascii_alphabetic())
+    })
+}
+
+fn is_stack_frame(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if line.starts_with([' ', '\t']) {
+        return true;
+    }
+    if ["at ", "(wrapper", "Rethrow as", "--- End of", "0x"].iter().any(|p| trimmed.starts_with(p)) {
+        return true;
+    }
+    if trimmed.starts_with('#') && trimmed[1..].starts_with(|c: char| c.is_ascii_digit()) {
+        return true;
+    }
+    match (trimmed.find(':'), trimmed.find(" (")) {
+        (Some(colon), Some(paren)) => colon < paren && !trimmed[..paren].contains(' ') && trimmed.ends_with(')'),
+        _ => false,
+    }
+}
+
+fn own_severity(line: &str, client: bool) -> Severity {
+    let lower = line.to_ascii_lowercase();
+    if CRASH_MARKERS.iter().any(|m| lower.contains(m)) {
+        return Severity::Crash;
+    }
+    if client {
+        if lower.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w.ends_with("exception")) || has_word(&lower, "error") {
+            return Severity::Error;
+        }
+        if has_word(&lower, "warning") {
+            return Severity::Warning;
+        }
+    } else if line.contains("] ERROR") {
+        return Severity::Error;
+    } else if line.contains("] WARN") {
+        return Severity::Warning;
+    }
+    Severity::Normal
+}
+
+pub fn classify(lines: &[&str], client: bool) -> Vec<Severity> {
+    let mut out = Vec::with_capacity(lines.len());
+    let mut carry = Severity::Normal;
+    for line in lines {
+        let own = own_severity(line, client);
+        let severity = if own == Severity::Normal && matches!(carry, Severity::Error | Severity::Crash) && is_stack_frame(line) { carry } else { own };
+        carry = if line.trim().is_empty() { Severity::Normal } else if own == Severity::Normal { if is_stack_frame(line) { carry } else { Severity::Normal } } else { own };
+        out.push(severity);
+    }
+    out
+}
+
+pub fn count(marks: &[Severity]) -> (usize, usize) {
+    let (mut errors, mut crashes) = (0, 0);
+    let mut last_crash: Option<usize> = None;
+    for (i, mark) in marks.iter().enumerate() {
+        let starts = i == 0 || marks[i - 1] != *mark;
+        match mark {
+            Severity::Error if starts => errors += 1,
+            Severity::Crash => {
+                if last_crash.map_or(true, |at| i - at > 12) {
+                    crashes += 1;
+                }
+                last_crash = Some(i);
+            }
+            _ => {}
+        }
+    }
+    (errors, crashes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,5 +207,53 @@ mod tests {
         assert!(last.starts_with('['));
         assert!(last.contains("TEST  first second"));
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn errors_crashes_and_their_stack_traces_are_marked() {
+        let client = [
+            "Loading player data",
+            "NullReferenceException: Object reference not set to an instance of an object",
+            "  at PlayerController.Update () [0x00000] in <abc>:0 ",
+            "UnityEngine.Debug:LogError (object)",
+            "Fishing:Cast ()",
+            "",
+            "Some other line",
+            "Warning: the sound is too loud",
+            "Crash!!!",
+            "#0 0x00007ff6 in UnityPlayer",
+            "errorCode not an error word",
+            "Tile errors do not count",
+        ];
+        let marks = classify(&client, true);
+        assert_eq!(
+            marks,
+            vec![
+                Severity::Normal,
+                Severity::Error,
+                Severity::Error,
+                Severity::Error,
+                Severity::Error,
+                Severity::Normal,
+                Severity::Normal,
+                Severity::Warning,
+                Severity::Crash,
+                Severity::Crash,
+                Severity::Error,
+                Severity::Normal,
+            ]
+        );
+        let launcher = ["[2026-11-20 10:00:00] INFO  Started", "[2026-11-20 10:00:01] WARN  Slow", "[2026-11-20 10:00:02] ERROR Broke", "thread 'main' panicked at src/ui.rs:1:1"];
+        assert_eq!(classify(&launcher, false), vec![Severity::Normal, Severity::Warning, Severity::Error, Severity::Crash]);
+    }
+
+    #[test]
+    fn one_crash_report_counts_once() {
+        let unity = ["Crash!!!", "SymInit: Symbol-SearchPath: '.'", "========== OUTPUTTING STACK TRACE ==================", "0x00007FF6 (UnityPlayer) UnityMain", "NullReferenceException: boom", "  at A.B () [0x0] in <x>:0"];
+        assert_eq!(count(&classify(&unity, true)), (1, 1));
+        let mut two = vec!["Crash!!!"];
+        two.extend(std::iter::repeat("normal line").take(20));
+        two.push("Crash!!!");
+        assert_eq!(count(&classify(&two, true)), (0, 2));
     }
 }

@@ -128,6 +128,7 @@ enum Msg {
     Restarting,
     SelfUpdateFailed(String),
     SignedIn(Result<SignIn, String>),
+    Registered(Result<api::Registration, String>),
     Ticket(Result<Ticket, String>),
     Resumed(Result<Ticket, api::ResumeError>),
     PasswordSignedIn(Result<Ticket, String>, String),
@@ -156,6 +157,8 @@ enum Phase {
     Ready,
     SigningIn { text: String },
     Choose { session: String, accounts: Vec<String> },
+    OfferCreate { session: String, discord_name: String },
+    Created { account: String, password: String },
     SignIn { name: String, password: String, error: Option<String>, discord: bool },
     Playing { account: String, token: String },
     Failed { message: String, retry: Retry },
@@ -251,6 +254,8 @@ pub struct LauncherApp {
     was_focused: bool,
     setup: bool,
     play_after_update: bool,
+    coming_soon: Option<f64>,
+    create_intent: bool,
     setup_size: Option<u64>,
     setup_unavailable: Option<String>,
     setup_error: Option<String>,
@@ -413,6 +418,8 @@ impl LauncherApp {
             was_focused: true,
             setup: config::needs_setup(),
             play_after_update: false,
+            coming_soon: None,
+            create_intent: false,
             setup_size: None,
             setup_unavailable: None,
             setup_error: None,
@@ -536,7 +543,7 @@ impl LauncherApp {
     }
 
     fn busy(&self) -> bool {
-        matches!(self.phase, Phase::Updating { .. } | Phase::SigningIn { .. } | Phase::Playing { .. } | Phase::Choose { .. } | Phase::SignIn { .. })
+        matches!(self.phase, Phase::Updating { .. } | Phase::SigningIn { .. } | Phase::Playing { .. } | Phase::Choose { .. } | Phase::SignIn { .. } | Phase::OfferCreate { .. } | Phase::Created { .. })
     }
 
     fn start_update(&mut self) {
@@ -634,6 +641,7 @@ impl LauncherApp {
             return;
         }
         self.notice = None;
+        self.create_intent = false;
         log::info("Starting Discord sign-in");
         self.phase = Phase::SigningIn { text: "Waiting for Discord in your browser".into() };
         let cfg = self.cfg.clone();
@@ -649,6 +657,23 @@ impl LauncherApp {
             if !cancel.load(Ordering::Relaxed) {
                 let _ = tx.send(Msg::SignedIn(result));
             }
+        });
+    }
+
+    fn start_create_account(&mut self) {
+        self.start_sign_in();
+        if matches!(self.phase, Phase::SigningIn { .. }) {
+            log::info("Creating an account: signing in with Discord first");
+            self.create_intent = true;
+        }
+    }
+
+    fn request_registration(&mut self, session: String) {
+        self.phase = Phase::SigningIn { text: "Creating your account".into() };
+        let cfg = self.cfg.clone();
+        let agent = self.agent.clone();
+        self.spawn(move |tx| {
+            let _ = tx.send(Msg::Registered(api::register(&agent, &cfg, &session)));
         });
     }
 
@@ -1098,6 +1123,7 @@ impl LauncherApp {
             Msg::Restarting => self.ctx.send_viewport_cmd(ViewportCommand::Close),
             Msg::SelfUpdateFailed(e) => self.notice = Some(format!("The launcher could not update itself ({e}). See Logs for details.")),
             Msg::Updated(Ok(installed)) => {
+                self.coming_soon = None;
                 self.installed = Some(installed);
                 self.phase = Phase::Ready;
                 if std::mem::take(&mut self.play_after_update) {
@@ -1113,26 +1139,51 @@ impl LauncherApp {
                         self.start_play();
                     }
                 }
+                None if update::is_not_published(&e) => {
+                    self.play_after_update = false;
+                    if self.coming_soon.is_none() {
+                        log::info(format!("Project Reboot isn't out for {} yet; checking again every few minutes", platform_name()));
+                    }
+                    self.coming_soon = Some(self.ctx.input(|i| i.time));
+                    self.phase = Phase::Ready;
+                }
                 None => {
                     self.play_after_update = false;
-                    let message = if update::is_not_published(&e) && cfg!(target_os = "macos") {
-                        "The Mac version of Project Reboot isn't out yet. The launcher will install it as soon as it is.".to_string()
-                    } else if update::is_not_published(&e) && !cfg!(windows) {
-                        format!("The Linux version of Project Reboot isn't out yet. {}", config::PROTON_HELP)
-                    } else {
-                        format!("Could not download Project Reboot: {e}")
-                    };
-                    self.phase = Phase::Failed { message, retry: Retry::Update };
+                    self.phase = Phase::Failed { message: format!("Could not download Project Reboot: {e}"), retry: Retry::Update };
                 }
             },
             Msg::SignedIn(Ok(sign_in)) => {
                 log::info(format!("Signed in with Discord ({} linked account(s))", sign_in.accounts.len()));
                 self.discord_name = Some(sign_in.display_name.clone()).filter(|n| !n.is_empty());
+                let create = std::mem::take(&mut self.create_intent);
+                if create && !sign_in.accounts.is_empty() {
+                    self.notice = Some("This Discord account already has a Project Reboot account, so the launcher signed you in to it.".into());
+                }
                 match sign_in.accounts.as_slice() {
                     [only] => self.request_ticket(sign_in.session, only.clone()),
-                    [] => self.phase = Phase::Failed { message: "No Project Reboot account is linked to this Discord account.".into(), retry: Retry::SignIn },
+                    [] if sign_in.can_create && !create => {
+                        self.phase = Phase::OfferCreate { session: sign_in.session, discord_name: sign_in.display_name };
+                    }
+                    [] => self.request_registration(sign_in.session),
                     _ => self.phase = Phase::Choose { session: sign_in.session, accounts: sign_in.accounts },
                 }
+            }
+            Msg::Registered(Ok(made)) => {
+                log::info(format!("Created the account {} in the launcher", made.account));
+                if let Err(e) = remember::save(&made.account, &made.remember) {
+                    log::warn(format!("Could not keep this PC signed in: {e}"));
+                }
+                api::mark_made_account(&made.account);
+                self.account_name = Some(made.account.clone());
+                api::save_account(self.account_name.as_deref());
+                self.rank = None;
+                self.avatar = None;
+                self.fetch_avatar(Some(made.account.clone()), made.token.clone());
+                self.phase = Phase::Created { account: made.account, password: made.password };
+            }
+            Msg::Registered(Err(e)) => {
+                log::warn(format!("Creating an account failed: {e}"));
+                self.phase = Phase::Failed { message: e, retry: Retry::Ready };
             }
             Msg::SignedIn(Err(e)) | Msg::Ticket(Err(e)) => {
                 log::error(format!("Sign-in failed: {e}"));
@@ -1313,6 +1364,29 @@ fn label_text(painter: &egui::Painter, center: Pos2, value: &str, room: Vec2, di
     painter.text(center, Align2::CENTER_CENTER, value, font, if dim { Color32::from_gray(190) } else { Color32::WHITE });
 }
 
+fn play_symbol(painter: &egui::Painter, center: Pos2, height: f32, dim: bool) {
+    let steps = 7;
+    let width = height * 0.88;
+    let column = width / steps as f32;
+    let inset = height / (steps as f32 * 2.0);
+    let left = center.x - width / 2.0 + column * 0.4;
+    let top = center.y - height / 2.0;
+    let columns: Vec<Rect> = (0..steps)
+        .map(|i| {
+            let i = i as f32;
+            Rect::from_min_max(Pos2::new((left + column * i).round(), (top + inset * i).round()), Pos2::new((left + column * (i + 1.0)).round(), (top + height - inset * i).round()))
+        })
+        .collect();
+    let drop = (height * 0.07).max(2.0).round();
+    for column in &columns {
+        painter.rect_filled(column.translate(Vec2::splat(drop)), CornerRadius::ZERO, Color32::from_black_alpha(235));
+    }
+    let color = if dim { Color32::from_gray(190) } else { Color32::WHITE };
+    for column in &columns {
+        painter.rect_filled(*column, CornerRadius::ZERO, color);
+    }
+}
+
 fn button(ui: &mut egui::Ui, rect: Rect, key: &str, label: &str, skin: Skin, enabled: bool) -> bool {
     let (response, hover) = hit(ui, rect, key, label, enabled);
     let painter = ui.painter();
@@ -1428,8 +1502,17 @@ fn note_line(ui: &mut egui::Ui, line: &str) {
 }
 
 const SERVER_RECHECK_SECONDS: f64 = 30.0;
+const COMING_SOON_RECHECK_SECONDS: f64 = 600.0;
 const SERVER_FOCUS_RECHECK_SECONDS: f64 = 5.0;
 const AVATAR_RECHECK_SECONDS: f64 = 300.0;
+
+fn platform_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Mac"
+    } else {
+        config::PLATFORM
+    }
+}
 
 fn server_label(state: &api::ServerState) -> String {
     match state {
@@ -1643,6 +1726,7 @@ impl LauncherApp {
                 };
                 (label.into(), false, status, Some(*progress), Skin::Gray)
             }
+            Phase::Ready if self.installed.is_none() && self.coming_soon.is_some() => ("COMING SOON".into(), false, format!("Coming soon to {}", platform_name()), None, Skin::Gray),
             Phase::Ready => {
                 let status = match (&self.installed, &self.server) {
                     (None, _) => "Not installed yet",
@@ -1654,6 +1738,8 @@ impl LauncherApp {
             }
             Phase::SigningIn { text } => ("SIGNING IN".into(), false, text.clone(), None, Skin::Gray),
             Phase::Choose { .. } => ("SIGNING IN".into(), false, "Choose an account".into(), None, Skin::Gray),
+            Phase::OfferCreate { .. } => ("SIGNING IN".into(), false, "Create your account".into(), None, Skin::Gray),
+            Phase::Created { .. } => ("SIGNING IN".into(), false, "Your account is ready".into(), None, Skin::Gray),
             Phase::SignIn { .. } => ("SIGNING IN".into(), false, "Sign in to play".into(), None, Skin::Gray),
             Phase::Playing { account, .. } if account.is_empty() => ("PLAYING".into(), false, "Playing".into(), None, Skin::Blue),
             Phase::Playing { account, .. } => ("PLAYING".into(), false, format!("Playing as {account}"), None, Skin::Blue),
@@ -1676,7 +1762,11 @@ impl LauncherApp {
         painter.rect_filled(face.translate(Vec2::new(0.0, 6.0)).shrink(4.0), CornerRadius::same(4), Color32::from_black_alpha(140));
         let busy = matches!(self.phase, Phase::Updating { .. } | Phase::SigningIn { .. } | Phase::Playing { .. });
         nine(&painter, skin.texture(), face, if enabled || busy || matches!(self.phase, Phase::Failed { .. }) { Color32::WHITE } else { Color32::from_gray(150) });
-        label_text(&painter, face.center() + Vec2::new(0.0, -2.0), &label, Vec2::new(face.width() - 30.0, face.height() * 0.66), !(enabled || busy));
+        if label == "PLAY" {
+            play_symbol(&painter, face.center() + Vec2::new(0.0, -2.0), face.height() * 0.6, !(enabled || busy));
+        } else {
+            label_text(&painter, face.center() + Vec2::new(0.0, -2.0), &label, Vec2::new(face.width() - 30.0, face.height() * 0.66), !(enabled || busy));
+        }
         if enabled && response.clicked() {
             log::info("Play pressed: making sure the game is up to date first");
             self.play_after_update = true;
@@ -1686,6 +1776,7 @@ impl LauncherApp {
         let status_y = play.bottom() + 18.0;
         let is_ready = matches!(self.phase, Phase::Ready);
         let detail: Option<(String, Color32)> = match (&self.phase, &self.installed) {
+            (Phase::Ready, None) if self.coming_soon.is_some() => Some(("The launcher installs it as soon as it's out".into(), MUTED)),
             (Phase::Ready, None) => Some(("It downloads automatically before you play".into(), MUTED)),
             (Phase::Ready, Some(_)) => match &self.server {
                 api::ServerState::Checking => Some(("Checking the server...".into(), FAINT)),
@@ -2037,20 +2128,50 @@ impl LauncherApp {
         let empty = if self.client_log { "The game hasn't written a log yet. It shows up here as soon as the game starts." } else { "The log is empty." };
         let shown = if self.log_text.trim().is_empty() { empty.to_string() } else { self.log_text.clone() };
         let client_view = self.client_log;
+        let lines: Vec<&str> = shown.lines().collect();
+        let marks = log::classify(&lines, client_view);
+        let (errors, crashes) = log::count(&marks);
+        if errors + crashes > 0 {
+            let mut parts = Vec::new();
+            if crashes > 0 {
+                parts.push(format!("{crashes} crash{}", if crashes == 1 { "" } else { "es" }));
+            }
+            if errors > 0 {
+                parts.push(format!("{errors} error{}", if errors == 1 { "" } else { "s" }));
+            }
+            let summary = parts.join("  ·  ");
+            let pill_font = heavy(13.0);
+            let width = painter.layout_no_wrap(summary.clone(), pill_font.clone(), TEXT).size().x + 22.0;
+            let pill = Rect::from_min_size(Pos2::new(frame.right() - PAD - width, row.y + (BUTTON_H - 26.0) / 2.0), Vec2::new(width, 26.0));
+            painter.rect_filled(pill, CornerRadius::same(13), if crashes > 0 { Color32::from_rgb(170, 30, 30) } else { Color32::from_rgb(110, 28, 28) });
+            text(&painter, pill.center(), Align2::CENTER_CENTER, &summary, pill_font, Color32::WHITE);
+        }
         ui.scope_builder(UiBuilder::new().max_rect(body.shrink(16.0)), |ui| {
-            ui.spacing_mut().item_spacing.y = 3.0;
+            ui.spacing_mut().item_spacing.y = 2.0;
             egui::ScrollArea::vertical().id_salt(("log-scroll", client_view)).stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
-                for line in shown.lines() {
-                    let color = if client_view {
-                        if line.contains("Exception") || line.contains("Error") || line.contains("error") { ERROR } else if line.contains("Warning") { WARN } else { Color32::from_rgb(196, 214, 238) }
-                    } else if line.contains("] ERROR") {
-                        ERROR
-                    } else if line.contains("] WARN") {
-                        WARN
-                    } else {
-                        Color32::from_rgb(196, 214, 238)
+                let full = ui.available_width();
+                for (line, mark) in lines.iter().zip(marks.iter()) {
+                    let (color, fill) = match mark {
+                        log::Severity::Crash => (Color32::WHITE, Some(Color32::from_rgba_unmultiplied(200, 30, 30, 170))),
+                        log::Severity::Error => (Color32::from_rgb(255, 150, 140), Some(Color32::from_rgba_unmultiplied(220, 40, 40, 48))),
+                        log::Severity::Warning => (WARN, None),
+                        log::Severity::Normal => (Color32::from_rgb(196, 214, 238), None),
                     };
-                    ui.add(egui::Label::new(egui::RichText::new(line).font(FontId::monospace(12.5)).color(color)).wrap());
+                    let mut rich = egui::RichText::new(*line).font(FontId::monospace(12.5)).color(color);
+                    if *mark == log::Severity::Crash {
+                        rich = rich.strong();
+                    }
+                    match fill {
+                        Some(fill) => {
+                            egui::Frame::NONE.fill(fill).inner_margin(egui::Margin::symmetric(6, 1)).show(ui, |ui| {
+                                ui.set_width(full - 12.0);
+                                ui.add(egui::Label::new(rich).wrap());
+                            });
+                        }
+                        None => {
+                            ui.add(egui::Label::new(rich).wrap());
+                        }
+                    }
                 }
             });
         });
@@ -2143,7 +2264,7 @@ impl LauncherApp {
                     Page::Logs => self.logs_page(ui, origin, width, rect.height()),
                     Page::Settings => self.settings_page(ui, origin, width),
                 };
-                ui.allocate_space(Vec2::new(width, used.max(rect.height()) - offset));
+                ui.set_min_size(Vec2::new(width, used.max(rect.height()) - offset));
             });
         });
         if t < 1.0 {
@@ -2197,9 +2318,7 @@ impl LauncherApp {
         let unpublished = self.setup_size.is_none() && self.setup_unavailable.as_deref().map(update::is_not_published).unwrap_or(false);
         let (footer, footer_color) = match (self.setup_size, &self.setup_unavailable) {
             (Some(size), _) => (format!("Download size: about {:.0} MB", size as f64 / 1_048_576.0), FAINT),
-            (None, Some(_)) if unpublished && cfg!(target_os = "macos") => ("The Mac version of Project Reboot isn't out yet. The launcher will install it as soon as it is.".to_string(), WARN),
-            (None, Some(_)) if unpublished && !cfg!(windows) => (format!("The Linux version of Project Reboot isn't out yet. {}", config::PROTON_HELP), WARN),
-            (None, Some(_)) if unpublished => (format!("No game build is published for {} yet.", config::PLATFORM), WARN),
+            (None, Some(_)) if unpublished => (format!("Project Reboot is coming soon to {}. Pick where to keep it and the launcher installs it as soon as it's out.", platform_name()), WARN),
             (None, Some(reason)) => (format!("Couldn't check the download size ({reason}). You can still pick a folder."), FAINT),
             (None, None) => ("Checking the download size...".to_string(), FAINT),
         };
@@ -2226,9 +2345,8 @@ impl LauncherApp {
         let mut chosen = None;
         for (key, title, detail, recommended) in options {
             let row = Rect::from_min_size(Pos2::new(panel.left() + PAD, y), Vec2::new(wrap, option_height));
-            let enabled = !(unpublished && key != "setup-existing");
-            let (response, hover) = hit(ui, row, key, &title, enabled);
-            let painter = if enabled { painter.clone() } else { let mut faded = painter.clone(); faded.set_opacity(0.4); faded };
+            let (response, hover) = hit(ui, row, key, &title, true);
+            let painter = painter.clone();
             let base = if recommended { Color32::from_rgb(22, 74, 40) } else { ROW };
             let lit = if recommended { Color32::from_rgb(30, 98, 52) } else { ROW_HOVER };
             painter.rect_filled(row, CornerRadius::same(10), mix(base, lit, hover));
@@ -2279,7 +2397,7 @@ impl LauncherApp {
     }
 
     fn modal(&mut self, ui: &mut egui::Ui, screen: Rect) {
-        let open = matches!(self.phase, Phase::Failed { .. } | Phase::Choose { .. } | Phase::SignIn { .. });
+        let open = matches!(self.phase, Phase::Failed { .. } | Phase::Choose { .. } | Phase::SignIn { .. } | Phase::OfferCreate { .. } | Phase::Created { .. });
         let shown = ui.ctx().animate_bool_with_time(Id::new("modal"), open, 0.18);
         if open && shown < 1.0 {
             ui.ctx().request_repaint();
@@ -2289,6 +2407,10 @@ impl LauncherApp {
         }
         if matches!(self.phase, Phase::SignIn { .. }) {
             self.sign_in_modal(ui, screen, shown);
+            return;
+        }
+        if matches!(self.phase, Phase::OfferCreate { .. } | Phase::Created { .. }) {
+            self.account_modal(ui, screen, shown);
             return;
         }
         let (title, message, accounts, retry) = match &self.phase {
@@ -2449,6 +2571,16 @@ impl LauncherApp {
             }
         }
         let bottom = panel.bottom() - PAD - BUTTON_H;
+        if discord && api::register_open() && !api::made_account() {
+            let label = "New here? Create an account";
+            let size = painter.layout_no_wrap(label.to_string(), semi(13.5), TEXT).size();
+            let link = Rect::from_min_size(Pos2::new(left, bottom + (BUTTON_H - size.y) / 2.0 - 2.0), size + Vec2::new(4.0, 4.0));
+            let (response, hover) = hit(ui, link, "sign-in-create", label, true);
+            text(&painter, link.left_center(), Align2::LEFT_CENTER, label, semi(13.5), mix(ACCENT, Color32::WHITE, hover));
+            if response.clicked() && action.is_none() {
+                action = Some(Box::new(|app: &mut LauncherApp| app.start_create_account()));
+            }
+        }
         let ready = !name.trim().is_empty() && !password.is_empty();
         let sign_in_width = button_width(&painter, "Sign in");
         let primary = Rect::from_min_size(Pos2::new(panel.right() - PAD - sign_in_width, bottom), Vec2::new(sign_in_width, BUTTON_H));
@@ -2471,6 +2603,79 @@ impl LauncherApp {
     }
 }
 
+impl LauncherApp {
+    fn account_modal(&mut self, ui: &mut egui::Ui, screen: Rect, shown: f32) {
+        let painter = ui.painter().clone();
+        let _ = ui.interact(screen, Id::new("modal-blocker"), Sense::click());
+        painter.rect_filled(screen, CornerRadius::ZERO, Color32::from_black_alpha((160.0 * shown) as u8));
+        let width = 480.0;
+        let inner = width - PAD * 2.0;
+        let (title, message) = match &self.phase {
+            Phase::OfferCreate { discord_name, .. } => {
+                let who = if discord_name.is_empty() { "this Discord account".to_string() } else { discord_name.clone() };
+                ("Create your account?", format!("No Project Reboot account is linked to {who} yet. Create one now? Each Discord account can have one."))
+            }
+            Phase::Created { .. } => (
+                "Your account is ready!",
+                "Save your password somewhere safe. It is only shown this once. You are signed in on this PC, so the launcher logs you in from now on.".to_string(),
+            ),
+            _ => return,
+        };
+        let galley = painter.layout(message, regular(14.5), MUTED, inner);
+        let message_height = galley.size().y;
+        let rows = if matches!(self.phase, Phase::Created { .. }) { 2.0 * 58.0 + 6.0 } else { 0.0 };
+        let height = PAD + 30.0 + 12.0 + message_height + GAP + rows + BUTTON_H + PAD;
+        let panel = Rect::from_center_size(screen.center() + Vec2::new(0.0, (1.0 - shown) * 12.0), Vec2::new(width, height) * (0.94 + 0.06 * shown));
+        card(&painter, panel, 0.0);
+        text(&painter, panel.min + Vec2::splat(PAD), Align2::LEFT_TOP, title, semi(21.0), TEXT);
+        painter.galley(Pos2::new(panel.left() + PAD, panel.top() + PAD + 42.0), galley, MUTED);
+        let mut y = panel.top() + PAD + 42.0 + message_height + GAP;
+        let mut action: Option<Box<dyn FnOnce(&mut LauncherApp)>> = None;
+        if let Phase::Created { account, password } = &self.phase {
+            for (key, label, value) in [("copy-name", "Username", account.clone()), ("copy-password", "Password", password.clone())] {
+                let row = Rect::from_min_size(Pos2::new(panel.left() + PAD, y), Vec2::new(inner, 50.0));
+                painter.rect_filled(row, CornerRadius::same(4), FIELD);
+                painter.rect_stroke(row, CornerRadius::same(8), Stroke::new(1.0, EDGE), StrokeKind::Inside);
+                text(&painter, Pos2::new(row.left() + 14.0, row.top() + 14.0), Align2::LEFT_CENTER, label, semi(12.0), FAINT);
+                text(&painter, Pos2::new(row.left() + 14.0, row.top() + 33.0), Align2::LEFT_CENTER, &value, FontId::monospace(16.0), TEXT);
+                let copy_width = button_width(&painter, "Copy");
+                let copy = Rect::from_min_size(Pos2::new(row.right() - 8.0 - copy_width, row.center().y - 15.0), Vec2::new(copy_width, 30.0));
+                if button(ui, copy, key, "Copy", Skin::Gray, true) {
+                    ui.ctx().copy_text(value.clone());
+                    let what = label.to_lowercase();
+                    action = Some(Box::new(move |app: &mut LauncherApp| app.notice = Some(format!("Your {what} is copied to your clipboard."))));
+                }
+                y += 58.0;
+            }
+        }
+        let bottom = panel.bottom() - PAD - BUTTON_H;
+        let (primary_label, secondary_label) = if matches!(self.phase, Phase::Created { .. }) { ("Play", "Close") } else { ("Create account", "Cancel") };
+        let primary_width = button_width(&painter, primary_label);
+        let primary = Rect::from_min_size(Pos2::new(panel.right() - PAD - primary_width, bottom), Vec2::new(primary_width, BUTTON_H));
+        if button(ui, primary, "account-primary", primary_label, Skin::Green, true) {
+            action = Some(match &self.phase {
+                Phase::OfferCreate { session, .. } => {
+                    let session = session.clone();
+                    Box::new(move |app: &mut LauncherApp| app.request_registration(session))
+                }
+                _ => Box::new(|app: &mut LauncherApp| {
+                    app.phase = Phase::Ready;
+                    app.start_play();
+                }),
+            });
+        }
+        let secondary_width = button_width(&painter, secondary_label);
+        let secondary = Rect::from_min_size(Pos2::new(primary.left() - BUTTON_GAP - secondary_width, bottom), Vec2::new(secondary_width, BUTTON_H));
+        let escape = matches!(self.phase, Phase::OfferCreate { .. }) && ui.input(|i| i.key_pressed(egui::Key::Escape));
+        if button(ui, secondary, "account-secondary", secondary_label, Skin::Gray, true) || escape {
+            action = Some(Box::new(|app: &mut LauncherApp| app.phase = Phase::Ready));
+        }
+        if let Some(action) = action {
+            action(self);
+        }
+    }
+}
+
 impl eframe::App for LauncherApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(msg) = self.rx.try_recv() {
@@ -2483,6 +2688,12 @@ impl eframe::App for LauncherApp {
         let due = now - self.server_checked > SERVER_RECHECK_SECONDS || (came_back && now - self.server_checked > SERVER_FOCUS_RECHECK_SECONDS);
         if due && !self.setup && !self.server_checking && !matches!(self.phase, Phase::SigningIn { .. }) {
             self.check_server(true);
+        }
+        if let Some(at) = self.coming_soon {
+            if now - at > COMING_SOON_RECHECK_SECONDS && matches!(self.phase, Phase::Ready) && !self.setup {
+                self.coming_soon = Some(now);
+                self.start_update();
+            }
         }
         if let Phase::Playing { account, token } = &self.phase {
             if now - self.avatar_checked > AVATAR_RECHECK_SECONDS {
@@ -2501,7 +2712,7 @@ impl eframe::App for LauncherApp {
         if animating && !minimized {
             ctx.request_repaint_after(std::time::Duration::from_millis(if focused { 33 } else { 500 }));
         }
-        let overlay = self.setup || matches!(self.phase, Phase::Failed { .. } | Phase::Choose { .. } | Phase::SignIn { .. });
+        let overlay = self.setup || matches!(self.phase, Phase::Failed { .. } | Phase::Choose { .. } | Phase::SignIn { .. } | Phase::OfferCreate { .. } | Phase::Created { .. });
         self.cover.tick(self.page == Page::Play && focused && !minimized && !overlay, now);
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(MAIN)).show(ctx, |ui| {
             let screen = ui.max_rect();
