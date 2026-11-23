@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "exe": "Project Reboot.exe",
   "files": [
     {
@@ -13,11 +13,11 @@
     },
     {
       "path": "GameAssembly.dll",
-      "size": 43791872,
-      "sha256": "d009de98f14ac604e07baf7d6cc4b5ff4d0f4e766f7486c59fb209e6a136d6c7",
+      "size": 43843584,
+      "sha256": "03e872f1303aa9fdef2ba4d45f0152116986fb25aba89b80a67700851c6ec80a",
       "packed": {
-        "size": 12410573,
-        "sha256": "34c2fbbee8702ce6255864e3014d516cd64e5555fafc0559a6d55eab2710a927"
+        "size": 12428655,
+        "sha256": "a854ff78464b862c25e399c8a6a78c00ab22a19dead6b3fb46b76f74b3a0b723"
       }
     },
     {
@@ -91,28 +91,28 @@
     {
       "path": "Project Reboot_Data/boot.config",
       "size": 151,
-      "sha256": "a72475677f9d547f4a6d94a3cd2c0e3cad16c4ba9081596b4ba270229599a78a",
+      "sha256": "de00df9d6dc05c97a860691ba5e2ae618690fa10cf0b842359bbf00da6fb34fe",
       "packed": {
         "size": 128,
-        "sha256": "e5d01394a2c62e2f6e2f6816d32212fba9562f6ddaab27ecf4daca8198bab4b3"
+        "sha256": "e67d9609073c0fd76bc35cd9c060050e4719fddee1c813bc05f4b044e3542de3"
       }
     },
     {
       "path": "Project Reboot_Data/data.unity3d",
-      "size": 70661162,
-      "sha256": "ad79c05ce81bd887078a01728a5d5e4035ee9372dbb4b4eeb02ed4f7f0eea117",
+      "size": 70924382,
+      "sha256": "f86a662651c538ece85e102a2e10f53bff401377b110e06596974090591e1e72",
       "packed": {
-        "size": 46730888,
-        "sha256": "655adca587a56ddde11157c9c95d7e7093c7d6199de78fa9d7f15f259f1cf5f7"
+        "size": 46925715,
+        "sha256": "9af076d17950c975e59aee87c93f265e4645ddd794e7c5986a944201a48a323d"
       }
     },
     {
       "path": "Project Reboot_Data/il2cpp_data/Metadata/global-metadata.dat",
-      "size": 9880820,
-      "sha256": "7317d2f6acf7ed0fb25d78965caf34be46f1d689bc47fe290535b82ef499c093",
+      "size": 9896164,
+      "sha256": "640f3a912be81a21837cfc35538e7b5ec9bd3f5e041cac77cbe2715e8fd9ead0",
       "packed": {
-        "size": 3897687,
-        "sha256": "ffe61dc19f3cc2045ff0843040dd4acaad2972d27506383681cc22d13c26f61c"
+        "size": 3901047,
+        "sha256": "3d79bd4699666c14b63ba89a39f0b9f99a173a8cd8292e45005391161417f212"
       }
     },
     {
@@ -155,10 +155,10 @@
     {
       "path": "UnityPlayer.dll",
       "size": 33622960,
-      "sha256": "d99418dfbfbccb8138030ae808404dd9931551a071aab92324fda5a160f0754c",
+      "sha256": "080986e185a12e2e0d2ab910db1443269427ac1eb432bbf858b77e7af2ca47dd",
       "packed": {
-        "size": 11689501,
-        "sha256": "cca8da9cc031d87c526c2d4ce963035991d3575ceacaef6d025c7f7720390a07"
+        "size": 11689530,
+        "sha256": "4a16a7efaa36e68e5a90cd6084b7b2bb14835429df5810c640361c49218d92c3"
       }
     },
     {
