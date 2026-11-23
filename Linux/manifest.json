@@ -1,14 +1,14 @@
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "exe": "Project Reboot.x86_64",
   "files": [
     {
       "path": "GameAssembly.so",
-      "size": 68858088,
-      "sha256": "9aadbefc87a7362f34728b505f0eb8e5c9a406eda481c675072603d286917e6c",
+      "size": 68963080,
+      "sha256": "c2428f609ce82f3bbfa1b41c80b59994e450d9c36e660bc8b2ae5e2d9a46952b",
       "packed": {
-        "size": 14581059,
-        "sha256": "39d762afb4ed07e7adf81d13f0418f44b14168a040e0144293ee51bf1bd40444"
+        "size": 14674723,
+        "sha256": "e14a76633df23b009da91b249a0495d5b332d62c8d23aaae17cec4f60250ee5b"
       }
     },
     {
@@ -87,28 +87,28 @@
     {
       "path": "Project Reboot_Data/boot.config",
       "size": 151,
-      "sha256": "a87a01ac09ee1a2950dbf8611bb1318053e2307407661a2cd479003b2d859d88",
+      "sha256": "9bd698595bbe1aa72851a528917906caab67e4a215a80aca06581ee7f558333a",
       "packed": {
-        "size": 128,
-        "sha256": "2b67c38380ad14d1d5f6223dd4a40f5c211c2a260f8e798a506c61d842de59f4"
+        "size": 129,
+        "sha256": "2a88c3854d6120f11c07f421c419634b121a562501906c9b7af5787eeed420ac"
       }
     },
     {
       "path": "Project Reboot_Data/data.unity3d",
-      "size": 70852128,
-      "sha256": "b89feedc3880e340e6831bf92b5326fdf139ffd18e7c2aa153c3bd96cb1b9f49",
+      "size": 71063717,
+      "sha256": "b7b60e757e4b29e48686a7393571a64134e47e6827fe005e0db82820a0a04388",
       "packed": {
-        "size": 46859531,
-        "sha256": "9ac40de5282b077c2b17308c1e5d0678ac811ae3821d8e847092795d52a9a21d"
+        "size": 47019255,
+        "sha256": "bb3ac8475e9fe8f1cedb6baf00800ba94b480b75db6f31efee4d1ff62633371c"
       }
     },
     {
       "path": "Project Reboot_Data/il2cpp_data/Metadata/global-metadata.dat",
-      "size": 9803860,
-      "sha256": "49b4ee64ef9e8c0a5c3116de3f4197b14d1d08ce6d3de968a0c6d24e001be695",
+      "size": 9819128,
+      "sha256": "533d39d9071c4878d2f2fcff36a8548a96894072644a845e7e3fde3f0652e76e",
       "packed": {
-        "size": 3869855,
-        "sha256": "3bfb487667b944264ab0b0dfc9e5298c605b8f05320e7fe739f44133bd2e3bd7"
+        "size": 3869611,
+        "sha256": "6ce92dc349459f76833a6e2a3a23604a3c2b7f928b625e185faef88611c4064f"
       }
     },
     {
@@ -151,10 +151,10 @@
     {
       "path": "UnityPlayer.so",
       "size": 39116040,
-      "sha256": "c63d0b37ade5de7b9da8b4508af47ce868ff388dd60de0b000e78f464419f878",
+      "sha256": "a1d496045f73eb117cd7e5b821775bd5ae666fbedaec77c63bd13f5842129b1b",
       "packed": {
-        "size": 12338521,
-        "sha256": "a4c3ace3b0a0fc964a8d3fa09a30a0c581d7019c4680339a8881171fe3d1f9b9"
+        "size": 12338434,
+        "sha256": "4a593e4aaf23ab60159ba7cf8eea737635f3b144e3b1fe18e0974ded1eb2e4da"
       }
     },
     {
