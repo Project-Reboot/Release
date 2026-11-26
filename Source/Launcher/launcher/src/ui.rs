@@ -132,6 +132,7 @@ enum Msg {
     Ticket(Result<Ticket, String>),
     Resumed(Result<Ticket, api::ResumeError>),
     PasswordSignedIn(Result<Ticket, String>, String),
+    GameStarted,
     GameEnded(Ended),
     Avatar(Option<String>, api::Avatar),
 }
@@ -732,12 +733,7 @@ impl LauncherApp {
         }
         log::info(format!("Started the game (version {})", installed.version));
         self.phase = Phase::Playing { account: ticket.account, token: ticket.token };
-        self.ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
-        let dir = self.cfg.install_dir.clone();
-        let cancel = self.fresh_cancel();
-        self.spawn(move |tx| {
-            let _ = tx.send(Msg::GameEnded(game::wait_until_closed(&dir, &cancel)));
-        });
+        self.watch_game();
     }
 
     fn check_server(&mut self, may_probe_game_port: bool) {
@@ -777,11 +773,19 @@ impl LauncherApp {
         }
         log::info(format!("Started the game without launcher sign-in (version {})", installed.version));
         self.phase = Phase::Playing { account: String::new(), token: String::new() };
-        self.ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
+        self.watch_game();
+    }
+
+    fn watch_game(&mut self) {
         let dir = self.cfg.install_dir.clone();
         let cancel = self.fresh_cancel();
+        let ctx = self.ctx.clone();
         self.spawn(move |tx| {
-            let _ = tx.send(Msg::GameEnded(game::wait_until_closed(&dir, &cancel)));
+            let ended = game::wait_until_closed(&dir, &cancel, || {
+                let _ = tx.send(Msg::GameStarted);
+                ctx.request_repaint();
+            });
+            let _ = tx.send(Msg::GameEnded(ended));
         });
     }
 
@@ -1220,6 +1224,9 @@ impl LauncherApp {
             Msg::Resumed(Err(api::ResumeError::Unreachable(e))) => {
                 log::error(format!("Sign-in failed: {e}"));
                 self.phase = Phase::Failed { message: e, retry: Retry::Ready };
+            }
+            Msg::GameStarted => {
+                self.ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
             }
             Msg::GameEnded(ended) => {
                 if std::mem::take(&mut self.launcher_login) {

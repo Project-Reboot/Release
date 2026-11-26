@@ -182,20 +182,22 @@ pub enum Ended {
     Cancelled,
 }
 
-pub fn wait_until_closed(dir: &Path, cancel: &AtomicBool) -> Ended {
+pub fn wait_until_closed(dir: &Path, cancel: &AtomicBool, on_started: impl FnOnce()) -> Ended {
     let started = Instant::now();
-    let mut seen = false;
+    let mut on_started = Some(on_started);
     let mut last_seen = Instant::now();
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Ended::Cancelled;
         }
         if !running_from(dir).is_empty() {
-            seen = true;
+            if let Some(on_started) = on_started.take() {
+                on_started();
+            }
             last_seen = Instant::now();
-        } else if seen && last_seen.elapsed() >= RELAUNCH_GRACE {
+        } else if on_started.is_none() && last_seen.elapsed() >= RELAUNCH_GRACE {
             return Ended::Closed;
-        } else if !seen && started.elapsed() >= START_TIMEOUT {
+        } else if on_started.is_some() && started.elapsed() >= START_TIMEOUT {
             return Ended::NeverStarted;
         }
         thread::sleep(POLL);
