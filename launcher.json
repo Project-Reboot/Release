@@ -1,18 +1,13 @@
 {
-  "version": "0.3.1",
+  "version": "0.3.2",
   "windows": {
     "file": "Windows Launcher/ProjectRebootLauncher.exe",
-    "size": 11684352,
-    "sha256": "03835e8c15b1257aad8064b436441a9936f95388f1a31b94bc915d24858b3b76"
+    "size": 11683840,
+    "sha256": "33a54e44691aa615ead235ff65a3bdc206d73ec9ada9bb161701aa04e2705df1"
   },
   "linux": {
     "file": "Linux Launcher/ProjectRebootLauncher",
-    "size": 18630080,
-    "sha256": "0df3e81d1e3ea3d445c5720e589857f8d073819550b7347a2905487a81e0019d"
-  },
-  "mac": {
-    "file": "Mac Launcher/ProjectRebootLauncher",
-    "size": 22794080,
-    "sha256": "5149e94ee0d8fcb4d5436d887c41db6b936846cd077aa71a3ae48ec69c80a8c4"
+    "size": 18628928,
+    "sha256": "cfe25e5229dfcbeb39fa87f542d0efdaa60049af8c3cce111c44fa1d0bfde8bb"
   }
 }
