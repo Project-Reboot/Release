@@ -10,5 +10,7 @@ pub mod log;
 pub mod prefs;
 pub mod remember;
 pub mod selfupdate;
+#[cfg(windows)]
+mod tray;
 pub mod ui;
 pub mod update;

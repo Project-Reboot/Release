@@ -217,6 +217,10 @@ pub struct LauncherApp {
     agent: ureq::Agent,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
+    #[cfg(windows)]
+    window: Option<std::num::NonZeroIsize>,
+    #[cfg(windows)]
+    tray_icon: Option<crate::tray::TrayIcon>,
     phase: Phase,
     page: Page,
     page_since: f64,
@@ -382,6 +386,10 @@ impl LauncherApp {
             agent: update::agent(),
             tx,
             rx,
+            #[cfg(windows)]
+            window: crate::tray::window_handle(cc),
+            #[cfg(windows)]
+            tray_icon: None,
             phase: Phase::Ready,
             page: Page::Play,
             page_since: 0.0,
@@ -780,12 +788,22 @@ impl LauncherApp {
         let dir = self.cfg.install_dir.clone();
         let cancel = self.fresh_cancel();
         let ctx = self.ctx.clone();
+        #[cfg(windows)]
+        let window = self.window;
         self.spawn(move |tx| {
             let ended = game::wait_until_closed(&dir, &cancel, || {
                 let _ = tx.send(Msg::GameStarted);
                 ctx.request_repaint();
             });
-            let _ = tx.send(Msg::GameEnded(ended));
+            let closed = tx.send(Msg::GameEnded(ended)).is_ok();
+            #[cfg(windows)]
+            if closed {
+                if let Some(window) = window {
+                    crate::tray::wake_for_game_exit(window);
+                }
+            }
+            #[cfg(not(windows))]
+            let _ = closed;
         });
     }
 
@@ -1226,6 +1244,13 @@ impl LauncherApp {
                 self.phase = Phase::Failed { message: e, retry: Retry::Ready };
             }
             Msg::GameStarted => {
+                #[cfg(windows)]
+                {
+                    self.tray_icon = self.window.and_then(crate::tray::TrayIcon::hide_window);
+                    if self.tray_icon.is_some() {
+                        return;
+                    }
+                }
                 self.ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
             }
             Msg::GameEnded(ended) => {
@@ -1242,6 +1267,10 @@ impl LauncherApp {
                 }
                 self.phase = Phase::Ready;
                 self.fetch_game_login_avatar();
+                #[cfg(windows)]
+                if let Some(icon) = self.tray_icon.take() {
+                    icon.restore();
+                }
                 self.ctx.send_viewport_cmd(ViewportCommand::Minimized(false));
                 self.ctx.send_viewport_cmd(ViewportCommand::Focus);
             }
